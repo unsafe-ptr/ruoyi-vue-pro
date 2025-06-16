@@ -102,6 +102,22 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            
+            <!-- Spring AI Community 社区版本支持 -->
+            <!-- 注意：社区版本的 GroupId 和版本号需要进一步确认 -->
+            <!-- 请参考 https://github.com/spring-ai-community 获取最新信息 -->
+            <!--
+            <dependency>
+                <groupId>org.springframework.ai.community</groupId>
+                <artifactId>spring-ai-qianfan</artifactId>
+                <version>0.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.ai.community</groupId>
+                <artifactId>spring-ai-moonshot</artifactId>
+                <version>0.1.0</version>
+            </dependency>
+            -->
 
             <!-- 业务组件 -->
             <dependency>

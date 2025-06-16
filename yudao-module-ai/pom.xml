@@ -189,6 +189,24 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+        <!-- Spring AI - 社区版本支持 -->
+        <!-- 注意：如需使用 QianFan 或 Moonshot，请参考 Spring AI Community 项目 -->
+        <!-- https://github.com/spring-ai-community/qianfan -->
+        <!-- https://github.com/spring-ai-community/moonshot -->
+        <!--
+        <dependency>
+            <groupId>org.springframework.ai.community</groupId>
+            <artifactId>spring-ai-qianfan</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai.community</groupId>
+            <artifactId>spring-ai-moonshot</artifactId>
+        </dependency>
+        -->
+
+        <!-- Spring AI - Vector Stores -->
+        <dependency>
     </dependencies>
 
 </project>
