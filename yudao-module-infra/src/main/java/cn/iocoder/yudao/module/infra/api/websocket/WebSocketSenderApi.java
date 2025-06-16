@@ -39,6 +39,27 @@ public interface WebSocketSenderApi {
      */
     void send(String sessionId, String messageType, String messageContent);
 
+    /**
+     * 发送消息给指定租户的指定用户
+     *
+     * @param tenantId 租户编号
+     * @param userType 用户类型
+     * @param userId 用户编号
+     * @param messageType 消息类型
+     * @param messageContent 消息内容，JSON 格式
+     */
+    void sendToTenant(Long tenantId, Integer userType, Long userId, String messageType, String messageContent);
+
+    /**
+     * 发送消息给指定租户的指定用户类型
+     *
+     * @param tenantId 租户编号
+     * @param userType 用户类型
+     * @param messageType 消息类型
+     * @param messageContent 消息内容，JSON 格式
+     */
+    void sendToTenant(Long tenantId, Integer userType, String messageType, String messageContent);
+
     default void sendObject(Integer userType, Long userId, String messageType, Object messageContent) {
         send(userType, userId, messageType, JsonUtils.toJsonString(messageContent));
     }
@@ -49,6 +70,14 @@ public interface WebSocketSenderApi {
 
     default void sendObject(String sessionId, String messageType, Object messageContent) {
         send(sessionId, messageType, JsonUtils.toJsonString(messageContent));
+    }
+
+    default void sendObjectToTenant(Long tenantId, Integer userType, Long userId, String messageType, Object messageContent) {
+        sendToTenant(tenantId, userType, userId, messageType, JsonUtils.toJsonString(messageContent));
+    }
+
+    default void sendObjectToTenant(Long tenantId, Integer userType, String messageType, Object messageContent) {
+        sendToTenant(tenantId, userType, messageType, JsonUtils.toJsonString(messageContent));
     }
 
 }
