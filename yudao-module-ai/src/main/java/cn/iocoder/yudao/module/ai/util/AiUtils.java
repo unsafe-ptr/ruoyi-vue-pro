@@ -10,10 +10,8 @@ import org.springframework.ai.azure.openai.AzureOpenAiChatOptions;
 import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.minimax.MiniMaxChatOptions;
-import org.springframework.ai.moonshot.MoonshotChatOptions;
 import org.springframework.ai.ollama.api.OllamaOptions;
 import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.qianfan.QianFanChatOptions;
 import org.springframework.ai.zhipuai.ZhiPuAiChatOptions;
 
 import java.util.Collections;
@@ -45,7 +43,8 @@ public class AiUtils {
                 return DashScopeChatOptions.builder().withModel(model).withTemperature(temperature).withMaxToken(maxTokens)
                         .withFunctions(toolNames).withToolContext(toolContext).build();
             case YI_YAN:
-                return QianFanChatOptions.builder().model(model).temperature(temperature).maxTokens(maxTokens).build();
+                // 注意：文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案
+                throw new UnsupportedOperationException("文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
             case ZHI_PU:
                 return ZhiPuAiChatOptions.builder().model(model).temperature(temperature).maxTokens(maxTokens)
                         .functions(toolNames).toolContext(toolContext).build();
@@ -53,8 +52,8 @@ public class AiUtils {
                 return MiniMaxChatOptions.builder().model(model).temperature(temperature).maxTokens(maxTokens)
                         .functions(toolNames).toolContext(toolContext).build();
             case MOONSHOT:
-                return MoonshotChatOptions.builder().model(model).temperature(temperature).maxTokens(maxTokens)
-                        .functions(toolNames).toolContext(toolContext).build();
+                // 注意：月之暗面(moonshot)在Spring AI 1.0.0中已被移除，请使用其他替代方案
+                throw new UnsupportedOperationException("月之暗面(moonshot)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
             case OPENAI:
             case DEEP_SEEK: // 复用 OpenAI 客户端
             case DOU_BAO: // 复用 OpenAI 客户端

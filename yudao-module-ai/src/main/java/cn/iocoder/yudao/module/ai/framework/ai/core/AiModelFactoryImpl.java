@@ -42,10 +42,8 @@ import org.springframework.ai.autoconfigure.azure.openai.AzureOpenAiChatProperti
 import org.springframework.ai.autoconfigure.azure.openai.AzureOpenAiConnectionProperties;
 import org.springframework.ai.autoconfigure.azure.openai.AzureOpenAiEmbeddingProperties;
 import org.springframework.ai.autoconfigure.minimax.MiniMaxAutoConfiguration;
-import org.springframework.ai.autoconfigure.moonshot.MoonshotAutoConfiguration;
 import org.springframework.ai.autoconfigure.ollama.OllamaAutoConfiguration;
 import org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration;
-import org.springframework.ai.autoconfigure.qianfan.QianFanAutoConfiguration;
 import org.springframework.ai.autoconfigure.stabilityai.StabilityAiImageAutoConfiguration;
 import org.springframework.ai.autoconfigure.vectorstore.milvus.MilvusServiceClientConnectionDetails;
 import org.springframework.ai.autoconfigure.vectorstore.milvus.MilvusServiceClientProperties;
@@ -70,9 +68,6 @@ import org.springframework.ai.minimax.MiniMaxEmbeddingOptions;
 import org.springframework.ai.minimax.api.MiniMaxApi;
 import org.springframework.ai.model.function.FunctionCallbackResolver;
 import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.ai.moonshot.MoonshotChatModel;
-import org.springframework.ai.moonshot.MoonshotChatOptions;
-import org.springframework.ai.moonshot.api.MoonshotApi;
 import org.springframework.ai.ollama.OllamaChatModel;
 import org.springframework.ai.ollama.OllamaEmbeddingModel;
 import org.springframework.ai.ollama.api.OllamaApi;
@@ -84,12 +79,6 @@ import org.springframework.ai.openai.OpenAiImageModel;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.api.OpenAiImageApi;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
-import org.springframework.ai.qianfan.QianFanChatModel;
-import org.springframework.ai.qianfan.QianFanEmbeddingModel;
-import org.springframework.ai.qianfan.QianFanEmbeddingOptions;
-import org.springframework.ai.qianfan.QianFanImageModel;
-import org.springframework.ai.qianfan.api.QianFanApi;
-import org.springframework.ai.qianfan.api.QianFanImageApi;
 import org.springframework.ai.stabilityai.StabilityAiImageModel;
 import org.springframework.ai.stabilityai.api.StabilityAiApi;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
@@ -133,8 +122,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
             switch (platform) {
                 case TONG_YI:
                     return buildTongYiChatModel(apiKey);
-                case YI_YAN:
-                    return buildYiYanChatModel(apiKey);
                 case DEEP_SEEK:
                     return buildDeepSeekChatModel(apiKey);
                 case DOU_BAO:
@@ -147,8 +134,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
                     return buildZhiPuChatModel(apiKey, url);
                 case MINI_MAX:
                     return buildMiniMaxChatModel(apiKey, url);
-                case MOONSHOT:
-                    return buildMoonshotChatModel(apiKey, url);
                 case XING_HUO:
                     return buildXingHuoChatModel(apiKey);
                 case BAI_CHUAN:
@@ -159,6 +144,11 @@ public class AiModelFactoryImpl implements AiModelFactory {
                     return buildAzureOpenAiChatModel(apiKey, url);
                 case OLLAMA:
                     return buildOllamaChatModel(url);
+                // 注意：YI_YAN(qianfan)和MOONSHOT在Spring AI 1.0.0中已被移除
+                case YI_YAN:
+                    throw new UnsupportedOperationException("文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
+                case MOONSHOT:
+                    throw new UnsupportedOperationException("月之暗面(moonshot)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
                 default:
                     throw new IllegalArgumentException(StrUtil.format("未知平台({})", platform));
             }
@@ -171,8 +161,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
         switch (platform) {
             case TONG_YI:
                 return SpringUtil.getBean(DashScopeChatModel.class);
-            case YI_YAN:
-                return SpringUtil.getBean(QianFanChatModel.class);
             case DEEP_SEEK:
                 return SpringUtil.getBean(DeepSeekChatModel.class);
             case DOU_BAO:
@@ -185,8 +173,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
                 return SpringUtil.getBean(ZhiPuAiChatModel.class);
             case MINI_MAX:
                 return SpringUtil.getBean(MiniMaxChatModel.class);
-            case MOONSHOT:
-                return SpringUtil.getBean(MoonshotChatModel.class);
             case XING_HUO:
                 return SpringUtil.getBean(XingHuoChatModel.class);
             case BAI_CHUAN:
@@ -208,8 +194,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
         switch (platform) {
             case TONG_YI:
                 return SpringUtil.getBean(DashScopeImageModel.class);
-            case YI_YAN:
-                return SpringUtil.getBean(QianFanImageModel.class);
             case ZHI_PU:
                 return SpringUtil.getBean(ZhiPuAiImageModel.class);
             case SILICON_FLOW:
@@ -218,6 +202,9 @@ public class AiModelFactoryImpl implements AiModelFactory {
                 return SpringUtil.getBean(OpenAiImageModel.class);
             case STABLE_DIFFUSION:
                 return SpringUtil.getBean(StabilityAiImageModel.class);
+            // 注意：YI_YAN(qianfan)在Spring AI 1.0.0中已被移除
+            case YI_YAN:
+                throw new UnsupportedOperationException("文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
             default:
                 throw new IllegalArgumentException(StrUtil.format("未知平台({})", platform));
         }
@@ -229,8 +216,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
         switch (platform) {
             case TONG_YI:
                 return buildTongYiImagesModel(apiKey);
-            case YI_YAN:
-                return buildQianFanImageModel(apiKey);
             case ZHI_PU:
                 return buildZhiPuAiImageModel(apiKey, url);
             case OPENAI:
@@ -239,6 +224,9 @@ public class AiModelFactoryImpl implements AiModelFactory {
                 return buildSiliconFlowImageModel(apiKey,url);
             case STABLE_DIFFUSION:
                 return buildStabilityAiImageModel(apiKey, url);
+            // 注意：YI_YAN(qianfan)在Spring AI 1.0.0中已被移除
+            case YI_YAN:
+                throw new UnsupportedOperationException("文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
             default:
                 throw new IllegalArgumentException(StrUtil.format("未知平台({})", platform));
         }
@@ -269,8 +257,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
             switch (platform) {
                 case TONG_YI:
                     return buildTongYiEmbeddingModel(apiKey, model);
-                case YI_YAN:
-                    return buildYiYanEmbeddingModel(apiKey, model);
                 case ZHI_PU:
                     return buildZhiPuEmbeddingModel(apiKey, url, model);
                 case MINI_MAX:
@@ -281,6 +267,9 @@ public class AiModelFactoryImpl implements AiModelFactory {
                     return buildAzureOpenAiEmbeddingModel(apiKey, url, model);
                 case OLLAMA:
                     return buildOllamaEmbeddingModel(url, model);
+                // 注意：YI_YAN(qianfan)在Spring AI 1.0.0中已被移除
+                case YI_YAN:
+                    throw new UnsupportedOperationException("文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
                 default:
                     throw new IllegalArgumentException(StrUtil.format("未知平台({})", platform));
             }
@@ -334,30 +323,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
     private static DashScopeImageModel buildTongYiImagesModel(String key) {
         DashScopeImageApi dashScopeImageApi = new DashScopeImageApi(key);
         return new DashScopeImageModel(dashScopeImageApi);
-    }
-
-    /**
-     * 可参考 {@link QianFanAutoConfiguration} 的 qianFanChatModel 方法
-     */
-    private static QianFanChatModel buildYiYanChatModel(String key) {
-        List<String> keys = StrUtil.split(key, '|');
-        Assert.equals(keys.size(), 2, "YiYanChatClient 的密钥需要 (appKey|secretKey) 格式");
-        String appKey = keys.get(0);
-        String secretKey = keys.get(1);
-        QianFanApi qianFanApi = new QianFanApi(appKey, secretKey);
-        return new QianFanChatModel(qianFanApi);
-    }
-
-    /**
-     * 可参考 {@link QianFanAutoConfiguration} 的 qianFanImageModel 方法
-     */
-    private QianFanImageModel buildQianFanImageModel(String key) {
-        List<String> keys = StrUtil.split(key, '|');
-        Assert.equals(keys.size(), 2, "YiYanChatClient 的密钥需要 (appKey|secretKey) 格式");
-        String appKey = keys.get(0);
-        String secretKey = keys.get(1);
-        QianFanImageApi qianFanApi = new QianFanImageApi(appKey, secretKey);
-        return new QianFanImageModel(qianFanApi);
     }
 
     /**
@@ -423,16 +388,6 @@ public class AiModelFactoryImpl implements AiModelFactory {
                 : new MiniMaxApi(url, apiKey);
         MiniMaxChatOptions options = MiniMaxChatOptions.builder().model(MiniMaxApi.DEFAULT_CHAT_MODEL).temperature(0.7).build();
         return new MiniMaxChatModel(miniMaxApi, options, getFunctionCallbackResolver(), DEFAULT_RETRY_TEMPLATE);
-    }
-
-    /**
-     * 可参考 {@link MoonshotAutoConfiguration} 的 moonshotChatModel 方法
-     */
-    private MoonshotChatModel buildMoonshotChatModel(String apiKey, String url) {
-        MoonshotApi moonshotApi = StrUtil.isEmpty(url)? new MoonshotApi(apiKey)
-                : new MoonshotApi(url, apiKey);
-        MoonshotChatOptions options = MoonshotChatOptions.builder().model(MoonshotApi.DEFAULT_CHAT_MODEL).build();
-        return new MoonshotChatModel(moonshotApi, options, getFunctionCallbackResolver(), DEFAULT_RETRY_TEMPLATE);
     }
 
     /**
@@ -541,29 +496,10 @@ public class AiModelFactoryImpl implements AiModelFactory {
      * 可参考 {@link MiniMaxAutoConfiguration} 的 miniMaxEmbeddingModel 方法
      */
     private EmbeddingModel buildMiniMaxEmbeddingModel(String apiKey, String url, String model) {
-        MiniMaxApi miniMaxApi = StrUtil.isEmpty(url)? new MiniMaxApi(apiKey)
+        MiniMaxApi miniMaxApi = StrUtil.isEmpty(url) ? new MiniMaxApi(apiKey)
                 : new MiniMaxApi(url, apiKey);
         MiniMaxEmbeddingOptions miniMaxEmbeddingOptions = MiniMaxEmbeddingOptions.builder().model(model).build();
         return new MiniMaxEmbeddingModel(miniMaxApi, MetadataMode.EMBED, miniMaxEmbeddingOptions);
-    }
-
-    /**
-     * 可参考 {@link QianFanAutoConfiguration} 的 qianFanEmbeddingModel 方法
-     */
-    private QianFanEmbeddingModel buildYiYanEmbeddingModel(String key, String model) {
-        List<String> keys = StrUtil.split(key, '|');
-        Assert.equals(keys.size(), 2, "YiYanChatClient 的密钥需要 (appKey|secretKey) 格式");
-        String appKey = keys.get(0);
-        String secretKey = keys.get(1);
-        QianFanApi qianFanApi = new QianFanApi(appKey, secretKey);
-        QianFanEmbeddingOptions qianFanEmbeddingOptions = QianFanEmbeddingOptions.builder().model(model).build();
-        return new QianFanEmbeddingModel(qianFanApi, MetadataMode.EMBED, qianFanEmbeddingOptions);
-    }
-
-    private OllamaEmbeddingModel buildOllamaEmbeddingModel(String url, String model) {
-        OllamaApi ollamaApi = new OllamaApi(url);
-        OllamaOptions ollamaOptions = OllamaOptions.builder().model(model).build();
-        return OllamaEmbeddingModel.builder().ollamaApi(ollamaApi).defaultOptions(ollamaOptions).build();
     }
 
     /**
@@ -591,6 +527,12 @@ public class AiModelFactoryImpl implements AiModelFactory {
         AzureOpenAiEmbeddingProperties embeddingProperties = SpringUtil.getBean(AzureOpenAiEmbeddingProperties.class);
         return azureOpenAiAutoConfiguration.azureOpenAiEmbeddingModel(openAIClient, embeddingProperties,
                 null, null);
+    }
+
+    private OllamaEmbeddingModel buildOllamaEmbeddingModel(String url, String model) {
+        OllamaApi ollamaApi = new OllamaApi(url);
+        OllamaOptions ollamaOptions = OllamaOptions.builder().model(model).build();
+        return OllamaEmbeddingModel.builder().ollamaApi(ollamaApi).defaultOptions(ollamaOptions).build();
     }
 
     // ========== 各种创建 VectorStore 的方法 ==========

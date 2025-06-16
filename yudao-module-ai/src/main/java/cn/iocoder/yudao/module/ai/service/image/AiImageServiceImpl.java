@@ -34,7 +34,6 @@ import org.springframework.ai.image.ImageOptions;
 import org.springframework.ai.image.ImagePrompt;
 import org.springframework.ai.image.ImageResponse;
 import org.springframework.ai.openai.OpenAiImageOptions;
-import org.springframework.ai.qianfan.QianFanImageOptions;
 import org.springframework.ai.stabilityai.api.StabilityAiImageOptions;
 import org.springframework.ai.zhipuai.ZhiPuAiImageOptions;
 import org.springframework.scheduling.annotation.Async;
@@ -168,10 +167,8 @@ public class AiImageServiceImpl implements AiImageService {
                     .withHeight(draw.getHeight()).withWidth(draw.getWidth())
                     .build();
         } else if (ObjUtil.equal(model.getPlatform(), AiPlatformEnum.YI_YAN.getPlatform())) {
-            return QianFanImageOptions.builder()
-                    .model(model.getModel()).N(1)
-                    .height(draw.getHeight()).width(draw.getWidth())
-                    .build();
+            // 注意：文心一言(qianfan)在Spring AI 1.0.0中已被移除
+            throw new UnsupportedOperationException("文心一言(qianfan)在Spring AI 1.0.0中已被移除，请使用其他替代方案");
         } else if (ObjUtil.equal(model.getPlatform(), AiPlatformEnum.ZHI_PU.getPlatform())) {
             return ZhiPuAiImageOptions.builder()
                     .model(model.getModel())
@@ -260,7 +257,7 @@ public class AiImageServiceImpl implements AiImageService {
 
     @Override
     public Integer midjourneySync() {
-        // 1.1 获取 Midjourney 平台，状态在 “进行中” 的 image
+        // 1.1 获取 Midjourney 平台，状态在 "进行中" 的 image
         List<AiImageDO> images = imageMapper.selectListByStatusAndPlatform(
                 AiImageStatusEnum.IN_PROGRESS.getStatus(), AiPlatformEnum.MIDJOURNEY.getPlatform());
         if (CollUtil.isEmpty(images)) {

@@ -19,7 +19,7 @@
           国外：OpenAI、Ollama、Midjourney、StableDiffusion、Suno
     </description>
     <properties>
-        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <spring-ai.version>1.0.0</spring-ai.version>
         <tinyflow.version>1.0.2</tinyflow.version>
     </properties>
 
@@ -75,66 +75,49 @@
         <!-- Spring AI Model 模型接入 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-azure-openai-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-model-azure-openai</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-model-ollama</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-stability-ai-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-model-stability-ai</artifactId>
         </dependency>
         <dependency>
             <!-- 通义千问 -->
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-starter</artifactId>
-            <version>${spring-ai.version}.1</version>
+            <version>1.0.0.1</version>
         </dependency>
-        <dependency>
-            <!-- 文心一言 -->
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-qianfan-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
-        </dependency>
+        <!-- 注意：文心一言(qianfan)和月之暗面(moonshot)在Spring AI 1.0.0中已被移除 -->
+        <!-- 如需使用，请参考Spring AI Community repository -->
         <dependency>
             <!-- 智谱 GLM -->
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-zhipuai-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-model-zhipu-ai</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-minimax-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-moonshot-spring-boot-starter</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-model-minimax</artifactId>
         </dependency>
 
         <!-- 向量存储：https://db-engines.com/en/ranking/vector+dbms -->
         <dependency>
             <!-- Qdrant：https://qdrant.tech/ -->
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-qdrant-store</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-vector-store-qdrant</artifactId>
         </dependency>
 
         <dependency>
             <!-- Redis：https://redis.io/docs/latest/develop/get-started/vector-database/ -->
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-redis-store</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-vector-store-redis</artifactId>
         </dependency>
         <dependency>
             <groupId>cn.iocoder.boot</groupId>
@@ -144,8 +127,7 @@
         <dependency>
             <!-- Milvus：https://milvus.io/ -->
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-milvus-store</artifactId>
-            <version>${spring-ai.version}</version>
+            <artifactId>spring-ai-starter-vector-store-milvus</artifactId>
             <exclusions>
                 <!-- 解决和 logback 的日志冲突 -->
                 <exclusion>
@@ -159,7 +141,6 @@
             <!-- Tika：负责内容的解析 -->
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-tika-document-reader</artifactId>
-            <version>${spring-ai.version}</version>
             <!-- TODO 芋艿：boot 项目里，不引入 cloud 依赖！！！另外，这样也是为了解决启动报错的问题！ -->
             <exclusions>
                 <exclusion>
