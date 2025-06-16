@@ -2,6 +2,7 @@ package cn.iocoder.yudao.framework.websocket.config;
 
 import cn.iocoder.yudao.framework.mq.redis.config.YudaoRedisMQConsumerAutoConfiguration;
 import cn.iocoder.yudao.framework.mq.redis.core.RedisMQTemplate;
+import cn.iocoder.yudao.framework.websocket.core.aop.TenantWebSocketAspect;
 import cn.iocoder.yudao.framework.websocket.core.handler.JsonWebSocketMessageHandler;
 import cn.iocoder.yudao.framework.websocket.core.listener.WebSocketMessageListener;
 import cn.iocoder.yudao.framework.websocket.core.security.LoginUserHandshakeInterceptor;
@@ -15,6 +16,8 @@ import cn.iocoder.yudao.framework.websocket.core.sender.redis.RedisWebSocketMess
 import cn.iocoder.yudao.framework.websocket.core.sender.redis.RedisWebSocketMessageSender;
 import cn.iocoder.yudao.framework.websocket.core.sender.rocketmq.RocketMQWebSocketMessageConsumer;
 import cn.iocoder.yudao.framework.websocket.core.sender.rocketmq.RocketMQWebSocketMessageSender;
+import cn.iocoder.yudao.framework.websocket.core.sender.TenantWebSocketMessageSender;
+import cn.iocoder.yudao.framework.websocket.core.sender.WebSocketMessageSender;
 import cn.iocoder.yudao.framework.websocket.core.session.WebSocketSessionHandlerDecorator;
 import cn.iocoder.yudao.framework.websocket.core.session.WebSocketSessionManager;
 import cn.iocoder.yudao.framework.websocket.core.session.WebSocketSessionManagerImpl;
@@ -27,6 +30,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -82,10 +86,31 @@ public class YudaoWebSocketAutoConfiguration {
         return new WebSocketAuthorizeRequestsCustomizer(webSocketProperties);
     }
 
+    /**
+     * 创建租户感知的WebSocket消息发送器
+     * 自动包装实际的发送器，提供租户隔离功能
+     */
+    @Bean
+    @Primary
+    @ConditionalOnProperty(prefix = "yudao.tenant", value = "enable", matchIfMissing = true)
+    public TenantWebSocketMessageSender tenantWebSocketMessageSender(WebSocketMessageSender webSocketMessageSender) {
+        return new TenantWebSocketMessageSender(webSocketMessageSender);
+    }
+
+    /**
+     * 创建租户WebSocket AOP切面
+     * 自动处理带有 @TenantAware 注解的方法
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "yudao.tenant", value = "enable", matchIfMissing = true)
+    public TenantWebSocketAspect tenantWebSocketAspect() {
+        return new TenantWebSocketAspect();
+    }
+
     // ==================== Sender 相关 ====================
 
     @Configuration
-    @ConditionalOnProperty(prefix = "yudao.websocket", name = "sender-type", havingValue = "local")
+    @ConditionalOnProperty(prefix = "yudao.websocket", name = "sender-type", havingValue = "local", matchIfMissing = true)
     public class LocalWebSocketMessageSenderConfiguration {
 
         @Bean
@@ -101,7 +126,7 @@ public class YudaoWebSocketAutoConfiguration {
 
         @Bean
         public RedisWebSocketMessageSender redisWebSocketMessageSender(WebSocketSessionManager sessionManager,
-                                                                       RedisMQTemplate redisMQTemplate) {
+                                                                         RedisMQTemplate redisMQTemplate) {
             return new RedisWebSocketMessageSender(sessionManager, redisMQTemplate);
         }
 
