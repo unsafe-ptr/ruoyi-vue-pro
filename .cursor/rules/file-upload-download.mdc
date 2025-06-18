@@ -1,0 +1,906 @@
+# 文件上传下载指南
+
+## 文件服务架构
+
+### 存储方案
+- **本地存储**: 直接存储到服务器磁盘
+- **数据库存储**: 文件内容存储到数据库
+- **云存储**: 对接阿里云 OSS、腾讯云 COS、七牛云等
+- **FTP 存储**: 通过 FTP 协议存储文件
+- **S3 存储**: 兼容 AWS S3 协议（如 MinIO）
+
+### 文件管理表结构
+```sql
+-- 文件配置表
+CREATE TABLE infra_file_config (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '编号',
+    name VARCHAR(63) NOT NULL COMMENT '配置名',
+    storage TINYINT NOT NULL COMMENT '存储器',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    master BIT NOT NULL COMMENT '是否为主配置',
+    config VARCHAR(4096) NOT NULL COMMENT '存储配置',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+
+-- 文件表
+CREATE TABLE infra_file (
+    id VARCHAR(32) NOT NULL COMMENT '文件编号',
+    config_id BIGINT NOT NULL COMMENT '配置编号',
+    name VARCHAR(256) DEFAULT NULL COMMENT '文件名',
+    path VARCHAR(512) NOT NULL COMMENT '文件路径',
+    url VARCHAR(1024) NOT NULL COMMENT '文件 URL',
+    type VARCHAR(128) DEFAULT NULL COMMENT 'MIME 类型',
+    size INT NOT NULL COMMENT '文件大小',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+```
+
+## 文件客户端抽象
+
+### 文件客户端接口
+```java
+public interface FileClient {
+
+    /**
+     * 获得客户端编号
+     */
+    Long getId();
+
+    /**
+     * 上传文件
+     */
+    String upload(byte[] content, String path, String type) throws Exception;
+
+    /**
+     * 删除文件
+     */
+    void delete(String path) throws Exception;
+
+    /**
+     * 获得文件的内容
+     */
+    byte[] getContent(String path) throws Exception;
+
+    /**
+     * 获得文件的预签名 URL
+     */
+    FilePresignedUrlRespDTO getPresignedObjectUrl(String path, Duration expiration) throws Exception;
+}
+```
+
+### 抽象文件客户端
+```java
+public abstract class AbstractFileClient<Config extends FileClientConfig> implements FileClient {
+
+    protected Long id;
+    protected Config config;
+
+    public AbstractFileClient(Long id, Config config) {
+        this.id = id;
+        this.config = config;
+    }
+
+    /**
+     * 初始化
+     */
+    public final void init() {
+        doInit();
+        log.info("[init][配置({}) 初始化完成]", config);
+    }
+
+    /**
+     * 自定义初始化
+     */
+    protected abstract void doInit();
+
+    /**
+     * 刷新配置
+     */
+    public final void refresh(Config config) {
+        // 判断是否更新
+        if (this.config.equals(config)) {
+            return;
+        }
+        log.info("[refresh][配置({})发生变化，重新初始化]", config);
+        this.config = config;
+        // 初始化
+        this.doInit();
+    }
+
+    @Override
+    public Long getId() {
+        return id;
+    }
+}
+```
+
+## 具体存储实现
+
+### 本地存储客户端
+```java
+public class LocalFileClient extends AbstractFileClient<LocalFileClientConfig> {
+
+    public LocalFileClient(Long id, LocalFileClientConfig config) {
+        super(id, config);
+    }
+
+    @Override
+    protected void doInit() {
+        // 补全风格
+        if (!config.getBasePath().endsWith(File.separator)) {
+            config.setBasePath(config.getBasePath() + File.separator);
+        }
+    }
+
+    @Override
+    public String upload(byte[] content, String path, String type) throws Exception {
+        // 执行写入
+        String filePath = getFilePath(path);
+        FileUtil.writeBytes(content, filePath);
+        
+        // 拼接返回路径
+        return config.getDomain() + path;
+    }
+
+    @Override
+    public void delete(String path) throws Exception {
+        String filePath = getFilePath(path);
+        FileUtil.del(filePath);
+    }
+
+    @Override
+    public byte[] getContent(String path) throws Exception {
+        String filePath = getFilePath(path);
+        return FileUtil.readBytes(filePath);
+    }
+
+    private String getFilePath(String path) {
+        return config.getBasePath() + path;
+    }
+
+    @Override
+    public FilePresignedUrlRespDTO getPresignedObjectUrl(String path, Duration expiration) {
+        throw new UnsupportedOperationException("本地存储不支持预签名 URL");
+    }
+}
+```
+
+### S3 存储客户端
+```java
+public class S3FileClient extends AbstractFileClient<S3FileClientConfig> {
+
+    private AmazonS3 client;
+
+    public S3FileClient(Long id, S3FileClientConfig config) {
+        super(id, config);
+    }
+
+    @Override
+    protected void doInit() {
+        // 初始化客户端
+        AWSCredentials credentials = new BasicAWSCredentials(config.getAccessKey(), config.getAccessSecret());
+        AWSCredentialsProvider credentialsProvider = new AWSStaticCredentialsProvider(credentials);
+        ClientConfiguration clientConfig = new ClientConfiguration();
+        if (StrUtil.isNotEmpty(config.getRegion())) {
+            clientConfig.setSignerOverride("AWSS3V4SignerType");
+        }
+
+        // 创建 client
+        this.client = AmazonS3ClientBuilder.standard()
+                .withCredentials(credentialsProvider)
+                .withClientConfiguration(clientConfig)
+                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(
+                        config.getEndpoint(), config.getRegion()))
+                .withPathStyleAccessEnabled(config.getPathStyleAccess())
+                .build();
+    }
+
+    @Override
+    public String upload(byte[] content, String path, String type) throws Exception {
+        // 执行上传
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(content.length);
+        metadata.setContentType(type);
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(content);
+        client.putObject(config.getBucket(), path, inputStream, metadata);
+
+        // 拼接返回路径
+        return config.getDomain() + "/" + path;
+    }
+
+    @Override
+    public void delete(String path) throws Exception {
+        client.deleteObject(config.getBucket(), path);
+    }
+
+    @Override
+    public byte[] getContent(String path) throws Exception {
+        S3Object object = client.getObject(config.getBucket(), path);
+        return IoUtil.readBytes(object.getObjectContent());
+    }
+
+    @Override
+    public FilePresignedUrlRespDTO getPresignedObjectUrl(String path, Duration expiration) throws Exception {
+        Date expireDate = new Date(System.currentTimeMillis() + expiration.toMillis());
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(config.getBucket(), path)
+                .withMethod(HttpMethod.GET)
+                .withExpiration(expireDate);
+        URL url = client.generatePresignedUrl(request);
+        return new FilePresignedUrlRespDTO(url.toString(), 
+                                          LocalDateTime.now().plus(expiration));
+    }
+}
+```
+
+### 阿里云 OSS 客户端
+```java
+public class AliyunFileClient extends AbstractFileClient<AliyunFileClientConfig> {
+
+    private OSS client;
+
+    public AliyunFileClient(Long id, AliyunFileClientConfig config) {
+        super(id, config);
+    }
+
+    @Override
+    protected void doInit() {
+        // 补全 endpoint
+        if (!config.getEndpoint().contains("://")) {
+            config.setEndpoint("https://" + config.getEndpoint());
+        }
+        // 初始化客户端
+        client = new OSSClientBuilder().build(config.getEndpoint(), 
+                                            config.getAccessKey(), 
+                                            config.getAccessSecret());
+    }
+
+    @Override
+    public String upload(byte[] content, String path, String type) throws Exception {
+        // 执行上传
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(content.length);
+        metadata.setContentType(type);
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(content);
+        client.putObject(config.getBucket(), path, inputStream, metadata);
+
+        // 拼接返回路径
+        return config.getDomain() + "/" + path;
+    }
+
+    @Override
+    public void delete(String path) throws Exception {
+        client.deleteObject(config.getBucket(), path);
+    }
+
+    @Override
+    public byte[] getContent(String path) throws Exception {
+        OSSObject ossObject = client.getObject(config.getBucket(), path);
+        return IoUtil.readBytes(ossObject.getObjectContent());
+    }
+
+    @Override
+    public FilePresignedUrlRespDTO getPresignedObjectUrl(String path, Duration expiration) throws Exception {
+        Date expireDate = new Date(System.currentTimeMillis() + expiration.toMillis());
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(config.getBucket(), path, HttpMethod.GET);
+        request.setExpiration(expireDate);
+        URL url = client.generatePresignedUrl(request);
+        return new FilePresignedUrlRespDTO(url.toString(),
+                                          LocalDateTime.now().plus(expiration));
+    }
+}
+```
+
+## 文件服务实现
+
+### 文件服务接口
+```java
+@Service
+public class FileServiceImpl implements FileService {
+
+    @Resource
+    private FileConfigService fileConfigService;
+    
+    @Resource
+    private FileMapper fileMapper;
+    
+    @Resource
+    private FileClientFactory fileClientFactory;
+
+    @Override
+    public String createFile(String name, String path, byte[] content) throws Exception {
+        // 获取文件配置
+        FileConfigDO config = fileConfigService.getMasterFileConfig();
+        Assert.notNull(config, "客户端({}) 不能为空", config);
+
+        // 获取文件客户端
+        FileClient client = fileClientFactory.getFileClient(config.getId());
+
+        // 上传到文件存储器
+        String url = client.upload(content, path, name);
+
+        // 保存到数据库
+        FileDO file = new FileDO();
+        file.setConfigId(config.getId());
+        file.setName(name);
+        file.setPath(path);
+        file.setUrl(url);
+        file.setType(FileTypeUtils.getMimeType(name));
+        file.setSize(content.length);
+        fileMapper.insert(file);
+        return file.getId();
+    }
+
+    @Override
+    public void deleteFile(String id) throws Exception {
+        // 校验存在
+        FileDO file = validateFileExists(id);
+
+        // 从文件存储器中删除
+        FileClient client = fileClientFactory.getFileClient(file.getConfigId());
+        client.delete(file.getPath());
+
+        // 删除记录
+        fileMapper.deleteById(id);
+    }
+
+    @Override
+    public byte[] getFileContent(String id) throws Exception {
+        // 校验存在
+        FileDO file = validateFileExists(id);
+
+        // 从文件存储器中获取
+        FileClient client = fileClientFactory.getFileClient(file.getConfigId());
+        return client.getContent(file.getPath());
+    }
+
+    @Override
+    public FilePresignedUrlRespDTO getFilePresignedUrl(String id, Duration expiration) throws Exception {
+        // 校验存在
+        FileDO file = validateFileExists(id);
+
+        // 生成预签名 URL
+        FileClient client = fileClientFactory.getFileClient(file.getConfigId());
+        return client.getPresignedObjectUrl(file.getPath(), expiration);
+    }
+}
+```
+
+### 文件客户端工厂
+```java
+@Component
+public class FileClientFactory {
+
+    /**
+     * 文件客户端 Map
+     * key：配置编号
+     */
+    private final Map<Long, AbstractFileClient<?>> clients = new ConcurrentHashMap<>();
+
+    @Resource
+    private FileConfigService fileConfigService;
+
+    @PostConstruct
+    public void initLocalCache() {
+        // 第一步：查询文件配置
+        List<FileConfigDO> configs = fileConfigService.getFileConfigList();
+        log.info("[initLocalCache][缓存文件配置，数量为:{}]", configs.size());
+
+        // 第二步：构建缓存
+        configs.forEach(this::refreshFileClient);
+    }
+
+    @EventListener
+    public void onFileConfigRefresh(FileConfigRefreshMessage message) {
+        refreshFileClient(message.getFileConfig());
+    }
+
+    /**
+     * 获得文件客户端
+     */
+    public FileClient getFileClient(Long configId) {
+        AbstractFileClient<?> client = clients.get(configId);
+        if (client == null) {
+            log.error("[getFileClient][配置编号({}) 找不到客户端]", configId);
+        }
+        return client;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void refreshFileClient(FileConfigDO config) {
+        // 情况一：如果 config 被禁用，则移除
+        AbstractFileClient<?> client = clients.get(config.getId());
+        if (!config.getStatus()) {
+            if (client != null) {
+                clients.remove(config.getId());
+                log.info("[refreshFileClient][移除文件配置:{}]", config);
+            }
+            return;
+        }
+
+        // 情况二：如果 config 存在，则进行更新
+        if (client != null) {
+            client.refresh(config.getConfig());
+            return;
+        }
+
+        // 情况三：如果 client 不存在，则进行创建
+        client = this.createFileClient(config.getId(), config.getStorage(), config.getConfig());
+        client.init();
+        clients.put(client.getId(), client);
+        log.info("[refreshFileClient][添加文件配置:{}]", config);
+    }
+
+    private AbstractFileClient<?> createFileClient(Long configId, Integer storage, Object config) {
+        FileStorageEnum storageEnum = FileStorageEnum.valueOf(storage);
+        switch (storageEnum) {
+            case DB:
+                return new DBFileClient(configId, (DBFileClientConfig) config);
+            case LOCAL:
+                return new LocalFileClient(configId, (LocalFileClientConfig) config);
+            case FTP:
+                return new FtpFileClient(configId, (FtpFileClientConfig) config);
+            case S3:
+                return new S3FileClient(configId, (S3FileClientConfig) config);
+            case ALIYUN:
+                return new AliyunFileClient(configId, (AliyunFileClientConfig) config);
+            default:
+                throw new IllegalArgumentException(String.format("未知的文件存储器类型(%d)", storage));
+        }
+    }
+}
+```
+
+## 文件上传控制器
+
+### 通用文件上传
+```java
+@RestController
+@RequestMapping("/admin-api/infra/file")
+@Api(tags = "管理后台 - 文件存储")
+@Validated
+public class FileController {
+
+    @Resource
+    private FileService fileService;
+
+    @PostMapping("/upload")
+    @ApiOperation("上传文件")
+    @OperateLog(logArgs = false) // 上传文件的参数太大，不打印
+    public CommonResult<String> uploadFile(@RequestParam("file") MultipartFile file) throws Exception {
+        String path = generatePath(file);
+        String url = fileService.createFile(file.getOriginalFilename(), path, IoUtil.readBytes(file.getInputStream()));
+        return success(url);
+    }
+
+    @DeleteMapping("/delete")
+    @ApiOperation("删除文件")
+    public CommonResult<Boolean> deleteFile(@RequestParam("id") String id) throws Exception {
+        fileService.deleteFile(id);
+        return success(true);
+    }
+
+    @GetMapping("/{configId}/get/**")
+    @ApiOperation("下载文件")
+    @ApiImplicitParam(name = "configId", value = "配置编号", required = true, dataTypeClass = Long.class)
+    public void getFile(HttpServletRequest request,
+                        HttpServletResponse response,
+                        @PathVariable("configId") Long configId) throws Exception {
+        // 获取请求的路径
+        String path = StrUtil.subAfter(request.getRequestURI(), "/get/", false);
+        if (StrUtil.isEmpty(path)) {
+            throw new IllegalArgumentException("结尾的 path 路径必须传递");
+        }
+
+        // 读取内容
+        byte[] content = fileService.getFileContent(configId, path);
+        if (content == null) {
+            log.warn("[getFile][configId({}) path({}) 文件不存在]", configId, path);
+            response.setStatus(HttpStatus.NOT_FOUND.value());
+            return;
+        }
+        ServletUtils.writeAttachment(response, path, content);
+    }
+
+    /**
+     * 生成文件路径
+     */
+    private String generatePath(MultipartFile file) {
+        String fileName = file.getOriginalFilename();
+        String extName = FileUtil.extName(fileName);
+        return DateUtil.format(new Date(), "yyyy/MM/dd") + "/" + IdUtil.fastUUID() + "." + extName;
+    }
+}
+```
+
+### 头像上传
+```java
+@PostMapping("/upload-avatar")
+@ApiOperation("上传用户头像")
+public CommonResult<String> uploadAvatar(@RequestParam("avatarFile") MultipartFile file) throws Exception {
+    // 校验文件格式
+    validateImageFile(file);
+    
+    // 校验文件大小
+    if (file.getSize() > 2 * 1024 * 1024) { // 2MB
+        throw exception(FILE_SIZE_TOO_LARGE);
+    }
+    
+    // 生成头像路径
+    String path = generateAvatarPath(file);
+    
+    // 上传文件
+    String url = fileService.createFile(file.getOriginalFilename(), path, 
+                                       IoUtil.readBytes(file.getInputStream()));
+    
+    // 更新用户头像
+    Long userId = SecurityFrameworkUtils.getLoginUserId();
+    userService.updateUserAvatar(userId, url);
+    
+    return success(url);
+}
+
+private void validateImageFile(MultipartFile file) {
+    String fileName = file.getOriginalFilename();
+    String extName = FileUtil.extName(fileName).toLowerCase();
+    
+    Set<String> allowedExtensions = Set.of("jpg", "jpeg", "png", "gif", "bmp", "webp");
+    if (!allowedExtensions.contains(extName)) {
+        throw exception(FILE_TYPE_NOT_SUPPORTED);
+    }
+}
+
+private String generateAvatarPath(MultipartFile file) {
+    Long userId = SecurityFrameworkUtils.getLoginUserId();
+    String extName = FileUtil.extName(file.getOriginalFilename());
+    return "avatar/" + userId + "/" + System.currentTimeMillis() + "." + extName;
+}
+```
+
+## 图片处理
+
+### 图片缩放和裁剪
+```java
+@Service
+public class ImageProcessService {
+
+    /**
+     * 图片缩放
+     */
+    public byte[] resizeImage(byte[] imageData, int width, int height) {
+        try {
+            BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageData));
+            
+            // 计算缩放比例
+            double scaleX = (double) width / originalImage.getWidth();
+            double scaleY = (double) height / originalImage.getHeight();
+            double scale = Math.min(scaleX, scaleY);
+            
+            int targetWidth = (int) (originalImage.getWidth() * scale);
+            int targetHeight = (int) (originalImage.getHeight() * scale);
+            
+            // 创建缩放后的图片
+            BufferedImage resizedImage = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = resizedImage.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g2d.drawImage(originalImage, 0, 0, targetWidth, targetHeight, null);
+            g2d.dispose();
+            
+            // 输出为字节数组
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(resizedImage, "jpg", baos);
+            return baos.toByteArray();
+            
+        } catch (IOException e) {
+            throw new ServiceException("图片处理失败", e);
+        }
+    }
+
+    /**
+     * 图片裁剪
+     */
+    public byte[] cropImage(byte[] imageData, int x, int y, int width, int height) {
+        try {
+            BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageData));
+            
+            // 裁剪图片
+            BufferedImage croppedImage = originalImage.getSubimage(x, y, width, height);
+            
+            // 输出为字节数组
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(croppedImage, "jpg", baos);
+            return baos.toByteArray();
+            
+        } catch (IOException e) {
+            throw new ServiceException("图片裁剪失败", e);
+        }
+    }
+
+    /**
+     * 添加水印
+     */
+    public byte[] addWatermark(byte[] imageData, String watermarkText) {
+        try {
+            BufferedImage originalImage = ImageIO.read(new ByteArrayInputStream(imageData));
+            
+            Graphics2D g2d = originalImage.createGraphics();
+            
+            // 设置水印样式
+            g2d.setFont(new Font("Arial", Font.BOLD, 30));
+            g2d.setColor(new Color(255, 255, 255, 128)); // 半透明白色
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            
+            // 计算水印位置
+            FontMetrics fontMetrics = g2d.getFontMetrics();
+            int textWidth = fontMetrics.stringWidth(watermarkText);
+            int textHeight = fontMetrics.getHeight();
+            int x = originalImage.getWidth() - textWidth - 10;
+            int y = originalImage.getHeight() - 10;
+            
+            // 绘制水印
+            g2d.drawString(watermarkText, x, y);
+            g2d.dispose();
+            
+            // 输出为字节数组
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(originalImage, "jpg", baos);
+            return baos.toByteArray();
+            
+        } catch (IOException e) {
+            throw new ServiceException("添加水印失败", e);
+        }
+    }
+}
+```
+
+## 大文件上传
+
+### 分片上传
+```java
+@RestController
+@RequestMapping("/admin-api/infra/file/chunk")
+@Api(tags = "管理后台 - 分片上传")
+public class ChunkUploadController {
+
+    @Resource
+    private ChunkUploadService chunkUploadService;
+
+    @PostMapping("/init")
+    @ApiOperation("初始化分片上传")
+    public CommonResult<ChunkUploadInitRespVO> initChunkUpload(@Valid @RequestBody ChunkUploadInitReqVO reqVO) {
+        return success(chunkUploadService.initChunkUpload(reqVO));
+    }
+
+    @PostMapping("/upload")
+    @ApiOperation("上传文件分片")
+    public CommonResult<Boolean> uploadChunk(@RequestParam("uploadId") String uploadId,
+                                           @RequestParam("chunkNumber") Integer chunkNumber,
+                                           @RequestParam("file") MultipartFile file) throws Exception {
+        chunkUploadService.uploadChunk(uploadId, chunkNumber, IoUtil.readBytes(file.getInputStream()));
+        return success(true);
+    }
+
+    @PostMapping("/merge")
+    @ApiOperation("合并文件分片")
+    public CommonResult<String> mergeChunks(@Valid @RequestBody ChunkUploadMergeReqVO reqVO) throws Exception {
+        String fileId = chunkUploadService.mergeChunks(reqVO);
+        return success(fileId);
+    }
+
+    @DeleteMapping("/abort")
+    @ApiOperation("取消分片上传")
+    public CommonResult<Boolean> abortChunkUpload(@RequestParam("uploadId") String uploadId) {
+        chunkUploadService.abortChunkUpload(uploadId);
+        return success(true);
+    }
+}
+
+@Service
+public class ChunkUploadService {
+
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
+    
+    @Resource
+    private FileService fileService;
+
+    public ChunkUploadInitRespVO initChunkUpload(ChunkUploadInitReqVO reqVO) {
+        // 生成上传ID
+        String uploadId = IdUtil.fastUUID();
+        
+        // 缓存上传信息
+        ChunkUploadInfo uploadInfo = new ChunkUploadInfo();
+        uploadInfo.setFileName(reqVO.getFileName());
+        uploadInfo.setFileSize(reqVO.getFileSize());
+        uploadInfo.setChunkSize(reqVO.getChunkSize());
+        uploadInfo.setTotalChunks(calculateTotalChunks(reqVO.getFileSize(), reqVO.getChunkSize()));
+        uploadInfo.setUploadedChunks(new HashSet<>());
+        
+        String key = "chunk_upload:" + uploadId;
+        redisTemplate.opsForValue().set(key, uploadInfo, Duration.ofHours(24));
+        
+        return new ChunkUploadInitRespVO(uploadId, uploadInfo.getTotalChunks());
+    }
+
+    public void uploadChunk(String uploadId, Integer chunkNumber, byte[] chunkData) {
+        String key = "chunk_upload:" + uploadId;
+        ChunkUploadInfo uploadInfo = (ChunkUploadInfo) redisTemplate.opsForValue().get(key);
+        
+        if (uploadInfo == null) {
+            throw new ServiceException("上传信息不存在或已过期");
+        }
+        
+        // 存储分片数据
+        String chunkKey = "chunk_data:" + uploadId + ":" + chunkNumber;
+        redisTemplate.opsForValue().set(chunkKey, chunkData, Duration.ofHours(24));
+        
+        // 记录已上传分片
+        uploadInfo.getUploadedChunks().add(chunkNumber);
+        redisTemplate.opsForValue().set(key, uploadInfo, Duration.ofHours(24));
+    }
+
+    public String mergeChunks(ChunkUploadMergeReqVO reqVO) throws Exception {
+        String uploadId = reqVO.getUploadId();
+        String key = "chunk_upload:" + uploadId;
+        ChunkUploadInfo uploadInfo = (ChunkUploadInfo) redisTemplate.opsForValue().get(key);
+        
+        if (uploadInfo == null) {
+            throw new ServiceException("上传信息不存在或已过期");
+        }
+        
+        // 检查所有分片是否已上传
+        if (uploadInfo.getUploadedChunks().size() != uploadInfo.getTotalChunks()) {
+            throw new ServiceException("还有分片未上传完成");
+        }
+        
+        // 合并分片
+        ByteArrayOutputStream mergedContent = new ByteArrayOutputStream();
+        for (int i = 1; i <= uploadInfo.getTotalChunks(); i++) {
+            String chunkKey = "chunk_data:" + uploadId + ":" + i;
+            byte[] chunkData = (byte[]) redisTemplate.opsForValue().get(chunkKey);
+            if (chunkData != null) {
+                mergedContent.write(chunkData);
+            }
+        }
+        
+        // 上传合并后的文件
+        String path = generatePath(uploadInfo.getFileName());
+        String fileId = fileService.createFile(uploadInfo.getFileName(), path, mergedContent.toByteArray());
+        
+        // 清理临时数据
+        cleanupChunkData(uploadId, uploadInfo.getTotalChunks());
+        
+        return fileId;
+    }
+
+    private void cleanupChunkData(String uploadId, int totalChunks) {
+        // 删除上传信息
+        redisTemplate.delete("chunk_upload:" + uploadId);
+        
+        // 删除分片数据
+        for (int i = 1; i <= totalChunks; i++) {
+            redisTemplate.delete("chunk_data:" + uploadId + ":" + i);
+        }
+    }
+
+    private int calculateTotalChunks(long fileSize, int chunkSize) {
+        return (int) Math.ceil((double) fileSize / chunkSize);
+    }
+}
+```
+
+## 文件安全
+
+### 文件类型校验
+```java
+@Component
+public class FileSecurityValidator {
+
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
+        "image/jpeg", "image/png", "image/gif", "image/bmp", "image/webp"
+    );
+    
+    private static final Set<String> ALLOWED_DOCUMENT_TYPES = Set.of(
+        "application/pdf", "application/msword", 
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    
+    private static final Set<String> DANGEROUS_EXTENSIONS = Set.of(
+        "exe", "bat", "cmd", "com", "pif", "scr", "vbs", "js", "jar", "php", "asp", "jsp"
+    );
+
+    /**
+     * 校验文件类型
+     */
+    public void validateFileType(MultipartFile file, FileTypeEnum allowedType) {
+        String contentType = file.getContentType();
+        String fileName = file.getOriginalFilename();
+        String extension = FileUtil.extName(fileName).toLowerCase();
+        
+        // 检查危险扩展名
+        if (DANGEROUS_EXTENSIONS.contains(extension)) {
+            throw new ServiceException("不允许上传此类型文件");
+        }
+        
+        // 根据允许的类型进行校验
+        switch (allowedType) {
+            case IMAGE:
+                if (!ALLOWED_IMAGE_TYPES.contains(contentType)) {
+                    throw new ServiceException("只允许上传图片文件");
+                }
+                break;
+            case DOCUMENT:
+                if (!ALLOWED_DOCUMENT_TYPES.contains(contentType)) {
+                    throw new ServiceException("只允许上传文档文件");
+                }
+                break;
+            default:
+                // 通用校验，禁止可执行文件
+                break;
+        }
+    }
+
+    /**
+     * 校验文件大小
+     */
+    public void validateFileSize(MultipartFile file, long maxSize) {
+        if (file.getSize() > maxSize) {
+            String maxSizeStr = FileUtil.readableFileSize(maxSize);
+            throw new ServiceException("文件大小不能超过 " + maxSizeStr);
+        }
+    }
+
+    /**
+     * 扫描文件内容
+     */
+    public void scanFileContent(byte[] content) {
+        // TODO: 集成病毒扫描引擎
+        // 这里可以集成 ClamAV 等开源病毒扫描引擎
+        
+        // 简单的恶意代码检测
+        String contentStr = new String(content, StandardCharsets.UTF_8);
+        List<String> maliciousPatterns = Arrays.asList(
+            "<script", "javascript:", "eval(", "exec(", "system("
+        );
+        
+        for (String pattern : maliciousPatterns) {
+            if (contentStr.toLowerCase().contains(pattern)) {
+                throw new ServiceException("文件包含潜在恶意内容");
+            }
+        }
+    }
+}
+```
+
+## 最佳实践
+
+### 性能优化
+1. **异步上传**: 大文件使用异步上传提升用户体验
+2. **CDN 加速**: 配置 CDN 加速文件访问
+3. **预签名 URL**: 使用预签名 URL 减少服务器压力
+4. **缓存策略**: 合理设置文件缓存策略
+5. **分片上传**: 大文件使用分片上传避免超时
+
+### 安全考虑
+1. **文件类型校验**: 严格校验上传文件类型
+2. **文件大小限制**: 设置合理的文件大小限制
+3. **病毒扫描**: 集成病毒扫描引擎
+4. **访问控制**: 实现文件访问权限控制
+5. **存储隔离**: 不同租户文件存储隔离
+
+### 运维监控
+1. **存储使用量**: 监控存储空间使用情况
+2. **上传失败率**: 监控文件上传成功率
+3. **访问日志**: 记录文件访问日志
+4. **清理策略**: 定期清理临时和过期文件

@@ -1,0 +1,221 @@
+# 权限系统详解
+
+## 权限架构概述
+
+### RBAC 权限模型
+基于角色的访问控制（Role-Based Access Control），包含：
+- **用户 (User)**: 系统操作者
+- **角色 (Role)**: 权限的集合
+- **菜单 (Menu)**: 系统功能模块
+- **权限 (Permission)**: 具体操作权限
+
+### 核心权限表
+- `system_users`: 用户表
+- `system_role`: 角色表
+- `system_menu`: 菜单权限表
+- `system_user_role`: 用户角色关联表
+- `system_role_menu`: 角色菜单关联表
+
+## 权限控制实现
+
+### 菜单权限控制
+```java
+// 控制器方法级别权限
+@PreAuthorize("@ss.hasPermission('system:user:query')")
+public CommonResult<PageResult<UserRespVO>> getUserPage() {
+    // 业务逻辑
+}
+
+// 权限标识规范：模块:功能:操作
+// system:user:query   - 系统管理:用户管理:查询
+// system:user:create  - 系统管理:用户管理:新增
+// system:user:update  - 系统管理:用户管理:修改
+// system:user:delete  - 系统管理:用户管理:删除
+```
+
+### 数据权限控制
+```java
+// 部门数据权限
+@DataPermission(deptAlias = "d", userAlias = "u")
+public PageResult<UserDO> getUserPage(UserPageReqVO reqVO) {
+    // 自动添加数据权限 WHERE 条件
+}
+
+// 数据权限范围：
+// 1. 全部数据权限
+// 2. 指定部门数据权限  
+// 3. 本部门数据权限
+// 4. 本部门及以下数据权限
+// 5. 仅本人数据权限
+```
+
+### 字段权限控制
+```java
+// 在 VO 类中使用注解控制字段显示
+@JsonIgnore
+@ApiModelProperty(hidden = true)
+private String sensitiveField;
+```
+
+## 权限配置管理
+
+### 菜单配置
+在系统管理 -> 菜单管理中配置：
+- **菜单类型**: 目录、菜单、按钮
+- **权限标识**: 用于 @PreAuthorize 检查
+- **路由地址**: 前端路由路径
+- **组件路径**: Vue 组件路径
+- **是否缓存**: 页面缓存控制
+
+### 角色配置
+在系统管理 -> 角色管理中配置：
+- **角色权限**: 分配菜单权限
+- **数据权限**: 设置数据访问范围
+- **状态控制**: 启用/禁用角色
+
+### 用户配置
+在系统管理 -> 用户管理中配置：
+- **角色分配**: 为用户分配角色
+- **部门归属**: 确定数据权限范围
+- **状态控制**: 启用/禁用用户
+
+## 前端权限集成
+
+### 路由权限
+```javascript
+// 在路由配置中检查权限
+{
+  path: '/user',
+  component: Layout,
+  meta: {
+    permissions: ['system:user:query']
+  }
+}
+```
+
+### 按钮权限
+```vue
+<!-- 使用 v-hasPermi 指令控制按钮显示 -->
+<el-button 
+  v-hasPermi="['system:user:create']"
+  @click="handleAdd">
+  新增
+</el-button>
+```
+
+### 动态菜单
+前端根据用户权限动态生成菜单结构。
+
+## 权限缓存策略
+
+### Redis 缓存
+- **用户权限**: `user:permission:{userId}`
+- **角色权限**: `role:permission:{roleId}`
+- **菜单树**: `menu:tree`
+
+### 缓存更新
+权限变更时自动清理相关缓存：
+```java
+@CacheEvict(value = "user:permission", key = "#userId")
+public void updateUserRole(Long userId, Set<Long> roleIds) {
+    // 更新用户角色
+}
+```
+
+## 权限验证流程
+
+### 登录验证
+1. 用户登录验证
+2. 获取用户角色和权限
+3. 生成 JWT Token
+4. 缓存用户权限信息
+
+### 请求验证
+1. 解析 JWT Token
+2. 获取当前用户权限
+3. 检查接口权限要求
+4. 验证数据权限范围
+
+## 特殊权限场景
+
+### 超级管理员
+```java
+// 超级管理员拥有所有权限
+public static final Long SUPER_ADMIN_ID = 1L;
+
+if (Objects.equals(userId, SUPER_ADMIN_ID)) {
+    return true; // 跳过权限检查
+}
+```
+
+### 租户隔离
+```java
+// 多租户权限隔离
+@TenantIgnore // 忽略租户隔离的接口
+public class SystemController {
+    // 系统级别操作
+}
+```
+
+### 临时权限
+```java
+// 临时提升权限执行操作
+@WithMockUser(authorities = "system:admin")
+public void executeAdminOperation() {
+    // 执行需要管理员权限的操作
+}
+```
+
+## 权限扩展
+
+### 自定义权限验证器
+```java
+@Component("ss")
+public class SecurityFrameworkService {
+    
+    public boolean hasPermission(String permission) {
+        return hasAnyPermissions(permission);
+    }
+    
+    public boolean hasRole(String role) {
+        return hasAnyRoles(role);
+    }
+}
+```
+
+### 权限注解扩展
+```java
+@Target({ElementType.METHOD, ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@PreAuthorize("@ss.hasPermission(#permission)")
+public @interface RequiresPermissions {
+    String value();
+}
+```
+
+## 权限审计
+
+### 操作日志
+自动记录权限相关的操作：
+- 用户登录/登出
+- 权限变更操作
+- 敏感数据访问
+
+### 权限报表
+- 用户权限分析
+- 角色使用统计
+- 权限覆盖度分析
+
+## 最佳实践
+
+### 权限设计原则
+1. **最小权限原则**: 用户只获得必需的最小权限
+2. **职责分离**: 不同角色负责不同职责
+3. **权限继承**: 合理的权限层级结构
+4. **审计跟踪**: 完整的权限操作日志
+
+### 性能优化
+1. **权限缓存**: 合理使用 Redis 缓存
+2. **批量查询**: 避免 N+1 查询问题
+3. **索引优化**: 权限查询相关表添加索引
+4. **异步处理**: 权限变更异步通知

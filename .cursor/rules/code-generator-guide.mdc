@@ -1,0 +1,916 @@
+# 代码生成器使用指南
+
+## 代码生成器概述
+
+### 功能特性
+- **前后端代码生成**: 一键生成 Java + Vue 完整代码
+- **支持单表、树表、主子表**: 多种表结构类型
+- **CRUD 操作**: 增删改查的完整实现
+- **权限控制**: 自动生成权限注解
+- **接口文档**: 自动生成 Swagger 文档
+- **单元测试**: 生成完整的单元测试代码
+
+### 生成内容
+**后端 Java 代码**:
+- Controller 控制器
+- Service 业务逻辑层
+- Mapper 数据访问层
+- DO 数据对象
+- VO 视图对象
+- Convert 对象转换器
+- 单元测试类
+
+**前端 Vue 代码**:
+- 列表页面
+- 新增/编辑弹窗
+- 搜索表单
+- API 接口调用
+
+**SQL 脚本**:
+- 菜单权限 SQL
+- 按钮权限 SQL
+
+## 代码生成器表结构
+
+### 生成表配置
+```sql
+-- 代码生成表定义
+CREATE TABLE infra_codegen_table (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '编号',
+    data_source_config_id BIGINT NOT NULL COMMENT '数据源配置的编号',
+    scene TINYINT NOT NULL DEFAULT 1 COMMENT '生成场景',
+    table_name VARCHAR(200) NOT NULL DEFAULT '' COMMENT '表名称',
+    table_comment VARCHAR(500) NOT NULL DEFAULT '' COMMENT '表描述',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    module_name VARCHAR(30) NOT NULL COMMENT '模块名',
+    business_name VARCHAR(30) NOT NULL COMMENT '业务名',
+    class_name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '类名称',
+    class_comment VARCHAR(50) NOT NULL COMMENT '类描述',
+    author VARCHAR(50) NOT NULL COMMENT '作者',
+    template_type TINYINT NOT NULL DEFAULT 1 COMMENT '模板类型',
+    front_type TINYINT NOT NULL COMMENT '前端类型',
+    parent_menu_id BIGINT DEFAULT NULL COMMENT '父菜单编号',
+    master_table_id BIGINT DEFAULT NULL COMMENT '主表的编号',
+    sub_join_column_name VARCHAR(30) DEFAULT NULL COMMENT '子表关联主表的字段名',
+    sub_join_many BIT DEFAULT NULL COMMENT '主表与子表是否一对多',
+    tree_parent_column_name VARCHAR(30) DEFAULT NULL COMMENT '树表的父字段名',
+    tree_name_column_name VARCHAR(30) DEFAULT NULL COMMENT '树表的名字字段名',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+
+-- 代码生成表字段定义
+CREATE TABLE infra_codegen_column (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '编号',
+    table_id BIGINT NOT NULL COMMENT '表编号',
+    column_name VARCHAR(200) NOT NULL COMMENT '字段名',
+    data_type VARCHAR(100) NOT NULL COMMENT '字段类型',
+    column_comment VARCHAR(500) NOT NULL COMMENT '字段描述',
+    nullable BIT NOT NULL COMMENT '是否允许为空',
+    primary_key BIT NOT NULL COMMENT '是否主键',
+    ordinal_position INT NOT NULL COMMENT '排序',
+    java_type VARCHAR(32) NOT NULL COMMENT 'Java 属性类型',
+    java_field VARCHAR(64) NOT NULL COMMENT 'Java 属性名',
+    dict_type VARCHAR(200) DEFAULT '' COMMENT '字典类型',
+    example VARCHAR(64) DEFAULT NULL COMMENT '数据示例',
+    create_operation BIT NOT NULL COMMENT '是否为 Create 创建操作的字段',
+    update_operation BIT NOT NULL COMMENT '是否为 Update 更新操作的字段',
+    list_operation BIT NOT NULL COMMENT '是否为 List 查询操作的字段',
+    list_operation_condition VARCHAR(32) NOT NULL DEFAULT '=' COMMENT 'List 查询操作的条件类型',
+    list_operation_result BIT NOT NULL COMMENT '是否为 List 查询操作的返回字段',
+    html_type VARCHAR(32) NOT NULL COMMENT '显示类型',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+```
+
+## 代码生成服务
+
+### 表导入服务
+```java
+@Service
+public class CodegenTableServiceImpl implements CodegenTableService {
+
+    @Resource
+    private DatabaseTableService databaseTableService;
+    
+    @Resource
+    private CodegenTableMapper codegenTableMapper;
+    
+    @Resource
+    private CodegenColumnMapper codegenColumnMapper;
+
+    @Override
+    @Transactional
+    public List<Long> createCodegenList(Long dataSourceConfigId, List<String> tableNames) {
+        List<Long> ids = new ArrayList<>();
+        
+        // 遍历添加每个表
+        tableNames.forEach(tableName -> {
+            Long id = createCodegen(dataSourceConfigId, tableName);
+            ids.add(id);
+        });
+        
+        return ids;
+    }
+
+    private Long createCodegen(Long dataSourceConfigId, String tableName) {
+        // 从数据库中，获得数据库表结构
+        DatabaseTableRespDTO table = databaseTableService.getDatabaseTable(dataSourceConfigId, tableName);
+        List<DatabaseColumnRespDTO> columns = databaseTableService.getDatabaseColumnList(dataSourceConfigId, tableName);
+        
+        // 导入数据库表结构
+        CodegenTableDO codegenTable = convertTable(table);
+        codegenTable.setDataSourceConfigId(dataSourceConfigId);
+        codegenTable.setScene(CodegenSceneEnum.ADMIN.getScene()); // 默认管理后台
+        codegenTable.setAuthor(CodegenConstants.DEFAULT_AUTHOR);
+        initTable(codegenTable);
+        codegenTableMapper.insert(codegenTable);
+        
+        // 导入数据库字段结构
+        List<CodegenColumnDO> codegenColumns = convertColumns(codegenTable.getId(), columns);
+        // 初始化字段的默认值
+        codegenColumns.forEach(column -> initColumn(column, codegenTable));
+        codegenColumnMapper.insertBatch(codegenColumns);
+        
+        return codegenTable.getId();
+    }
+
+    /**
+     * 初始化表的配置
+     */
+    private void initTable(CodegenTableDO table) {
+        // 设置模块名
+        table.setModuleName(CodegenConstants.DEFAULT_MODULE_NAME);
+        
+        // 设置业务名
+        table.setBusinessName(StrUtil.toCamelCase(table.getTableName().replace(table.getModuleName() + "_", "")));
+        
+        // 设置类名
+        table.setClassName(StrUtil.upperFirst(StrUtil.toCamelCase(table.getBusinessName())));
+        
+        // 设置类描述
+        if (StrUtil.isBlank(table.getClassComment())) {
+            table.setClassComment(table.getTableComment());
+        }
+        
+        // 设置模板类型
+        table.setTemplateType(CodegenTemplateTypeEnum.CRUD.getType());
+        
+        // 设置前端类型
+        table.setFrontType(CodegenFrontTypeEnum.VUE3.getType());
+    }
+
+    /**
+     * 初始化字段的配置
+     */
+    private void initColumn(CodegenColumnDO column, CodegenTableDO table) {
+        // 设置 Java 属性类型
+        column.setJavaType(getJavaType(column.getDataType()));
+        
+        // 设置 Java 属性名
+        column.setJavaField(StrUtil.toCamelCase(column.getColumnName()));
+        
+        // 设置字典类型
+        column.setDictType(getDictType(column.getColumnName(), column.getColumnComment()));
+        
+        // 设置操作字段
+        if (isBaseColumn(column.getColumnName())) {
+            column.setCreateOperation(false);
+            column.setUpdateOperation(false);
+            column.setListOperation(false);
+            column.setListOperationResult(false);
+        } else {
+            column.setCreateOperation(true);
+            column.setUpdateOperation(true);
+            column.setListOperation(true);
+            column.setListOperationResult(true);
+        }
+        
+        // 设置 HTML 类型
+        column.setHtmlType(getHtmlType(column));
+        
+        // 设置查询条件
+        column.setListOperationCondition(getListOperationCondition(column));
+    }
+}
+```
+
+### 代码生成服务
+```java
+@Service
+public class CodegenEngineServiceImpl implements CodegenEngineService {
+
+    @Resource
+    private CodegenTableService codegenTableService;
+    
+    @Resource
+    private CodegenColumnService codegenColumnService;
+
+    @Override
+    public Map<String, String> execute(Long tableId) {
+        // 校验表和字段的有效性
+        CodegenTableDO table = codegenTableService.getCodegenTable(tableId);
+        List<CodegenColumnDO> columns = codegenColumnService.getCodegenColumnListByTableId(tableId);
+        
+        // 执行生成
+        return execute0(table, columns);
+    }
+
+    public Map<String, String> execute0(CodegenTableDO table, List<CodegenColumnDO> columns) {
+        // 创建生成上下文
+        Map<String, Object> bindingMap = buildBindingMap(table, columns);
+        
+        // 获得生成模板
+        List<CodegenTemplateDO> templates = getCodegenTemplateList(table.getTemplateType());
+        
+        // 执行生成
+        Map<String, String> result = new LinkedHashMap<>();
+        for (CodegenTemplateDO template : templates) {
+            String content = templateEngine.getTemplate(template.getContent()).execute(bindingMap);
+            result.put(template.getFilePath(), content);
+        }
+        return result;
+    }
+
+    /**
+     * 构建模板上下文
+     */
+    private Map<String, Object> buildBindingMap(CodegenTableDO table, List<CodegenColumnDO> columns) {
+        Map<String, Object> bindingMap = new HashMap<>();
+        
+        // 全局变量
+        bindingMap.put("basePackage", CodegenConstants.BASE_PACKAGE);
+        bindingMap.put("baseFrameworkPackage", CodegenConstants.BASE_FRAMEWORK_PACKAGE);
+        bindingMap.put("dateTime", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        bindingMap.put("author", table.getAuthor());
+        
+        // 表信息
+        bindingMap.put("table", table);
+        bindingMap.put("columns", columns);
+        
+        // 主键信息
+        CodegenColumnDO primaryColumn = CollUtil.findOne(columns, CodegenColumnDO::getPrimaryKey);
+        bindingMap.put("primaryColumn", primaryColumn);
+        
+        // 分类字段
+        List<CodegenColumnDO> createColumns = filterList(columns, CodegenColumnDO::getCreateOperation);
+        List<CodegenColumnDO> updateColumns = filterList(columns, CodegenColumnDO::getUpdateOperation);
+        List<CodegenColumnDO> listColumns = filterList(columns, CodegenColumnDO::getListOperation);
+        List<CodegenColumnDO> listOperationResultColumns = filterList(columns, CodegenColumnDO::getListOperationResult);
+        
+        bindingMap.put("createColumns", createColumns);
+        bindingMap.put("updateColumns", updateColumns);
+        bindingMap.put("listColumns", listColumns);
+        bindingMap.put("listOperationResultColumns", listOperationResultColumns);
+        
+        // 导入包
+        bindingMap.put("importPackages", buildImportPackages(table, columns));
+        
+        return bindingMap;
+    }
+
+    /**
+     * 构建导入包
+     */
+    private Set<String> buildImportPackages(CodegenTableDO table, List<CodegenColumnDO> columns) {
+        Set<String> packages = new HashSet<>();
+        
+        // 根据字段类型，添加对应的包
+        for (CodegenColumnDO column : columns) {
+            if (JavaTypeEnum.DATE.getType().equals(column.getJavaType())
+                || JavaTypeEnum.LOCAL_DATE_TIME.getType().equals(column.getJavaType())) {
+                packages.add("java.time.LocalDateTime");
+            }
+            if (JavaTypeEnum.BIG_DECIMAL.getType().equals(column.getJavaType())) {
+                packages.add("java.math.BigDecimal");
+            }
+        }
+        
+        // 移除 java.lang 包下的类
+        packages.removeIf(packageName -> packageName.startsWith("java.lang."));
+        
+        return packages;
+    }
+}
+```
+
+## 代码模板
+
+### Java Controller 模板
+```java
+package ${basePackage}.module.${table.moduleName}.controller.admin;
+
+import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.security.access.prepost.PreAuthorize;
+import io.swagger.annotations.*;
+
+import javax.validation.*;
+import javax.servlet.http.*;
+import java.util.*;
+import java.io.*;
+
+import ${baseFrameworkPackage}.common.pojo.PageResult;
+import ${baseFrameworkPackage}.common.pojo.CommonResult;
+import ${baseFrameworkPackage}.common.util.object.BeanUtils;
+import static ${baseFrameworkPackage}.common.pojo.CommonResult.success;
+
+import ${baseFrameworkPackage}.excel.core.util.ExcelUtils;
+
+import ${baseFrameworkPackage}.operatelog.core.annotations.OperateLog;
+import static ${baseFrameworkPackage}.operatelog.core.enums.OperateTypeEnum.*;
+
+import ${basePackage}.module.${table.moduleName}.controller.admin.${table.className}Controller;
+import ${basePackage}.module.${table.moduleName}.dal.dataobject.${table.className}DO;
+import ${basePackage}.module.${table.moduleName}.service.${table.className}Service;
+import ${basePackage}.module.${table.moduleName}.controller.admin.vo.${table.businessName}.*;
+
+@Api(tags = "管理后台 - ${table.classComment}")
+@RestController
+@RequestMapping("/admin-api/${table.moduleName}/${table.businessName}")
+@Validated
+public class ${table.className}Controller {
+
+    @Resource
+    private ${table.className}Service ${table.businessName}Service;
+
+    @PostMapping("/create")
+    @ApiOperation("创建${table.classComment}")
+    @PreAuthorize("@ss.hasPermission('${table.moduleName}:${table.businessName}:create')")
+    public CommonResult<${primaryColumn.javaType}> create${table.className}(@Valid @RequestBody ${table.className}CreateReqVO createReqVO) {
+        return success(${table.businessName}Service.create${table.className}(createReqVO));
+    }
+
+    @PutMapping("/update")
+    @ApiOperation("更新${table.classComment}")
+    @PreAuthorize("@ss.hasPermission('${table.moduleName}:${table.businessName}:update')")
+    public CommonResult<Boolean> update${table.className}(@Valid @RequestBody ${table.className}UpdateReqVO updateReqVO) {
+        ${table.businessName}Service.update${table.className}(updateReqVO);
+        return success(true);
+    }
+
+    @DeleteMapping("/delete")
+    @ApiOperation("删除${table.classComment}")
+    @Parameter(name = "id", description = "编号", required = true)
+    @PreAuthorize("@ss.hasPermission('${table.moduleName}:${table.businessName}:delete')")
+    public CommonResult<Boolean> delete${table.className}(@RequestParam("id") ${primaryColumn.javaType} id) {
+        ${table.businessName}Service.delete${table.className}(id);
+        return success(true);
+    }
+
+    @GetMapping("/get")
+    @ApiOperation("获得${table.classComment}")
+    @Parameter(name = "id", description = "编号", required = true, example = "1024")
+    @PreAuthorize("@ss.hasPermission('${table.moduleName}:${table.businessName}:query')")
+    public CommonResult<${table.className}RespVO> get${table.className}(@RequestParam("id") ${primaryColumn.javaType} id) {
+        ${table.className}DO ${table.businessName} = ${table.businessName}Service.get${table.className}(id);
+        return success(BeanUtils.toBean(${table.businessName}, ${table.className}RespVO.class));
+    }
+
+    @GetMapping("/page")
+    @ApiOperation("获得${table.classComment}分页")
+    @PreAuthorize("@ss.hasPermission('${table.moduleName}:${table.businessName}:query')")
+    public CommonResult<PageResult<${table.className}RespVO>> get${table.className}Page(@Valid ${table.className}PageReqVO pageReqVO) {
+        PageResult<${table.className}DO> pageResult = ${table.businessName}Service.get${table.className}Page(pageReqVO);
+        return success(BeanUtils.toBean(pageResult, ${table.className}RespVO.class));
+    }
+
+    @GetMapping("/export-excel")
+    @ApiOperation("导出${table.classComment} Excel")
+    @PreAuthorize("@ss.hasPermission('${table.moduleName}:${table.businessName}:export')")
+    @OperateLog(type = EXPORT)
+    public void export${table.className}Excel(@Valid ${table.className}PageReqVO pageReqVO,
+              HttpServletResponse response) throws IOException {
+        pageReqVO.setPageSize(PageParam.PAGE_SIZE_NONE);
+        List<${table.className}DO> list = ${table.businessName}Service.get${table.className}Page(pageReqVO).getList();
+        // 导出 Excel
+        ExcelUtils.write(response, "${table.classComment}.xls", "数据", ${table.className}RespVO.class,
+                        BeanUtils.toBean(list, ${table.className}RespVO.class));
+    }
+}
+```
+
+### Vue 列表页面模板
+```vue
+<template>
+  <div class="app-container">
+    <!-- 搜索工作栏 -->
+    <el-form
+      :model="queryParams"
+      ref="queryForm"
+      size="small"
+      :inline="true"
+      v-show="showSearch"
+      label-width="68px"
+    >
+#foreach ($column in $listColumns)
+#if ($column.listOperation)
+      <el-form-item label="${column.columnComment}" prop="${column.javaField}">
+#if ($column.htmlType == "input")
+        <el-input
+          v-model="queryParams.${column.javaField}"
+          placeholder="请输入${column.columnComment}"
+          clearable
+          @keyup.enter.native="handleQuery"
+        />
+#elseif ($column.htmlType == "select" || $column.htmlType == "radio")
+        <el-select v-model="queryParams.${column.javaField}" placeholder="请选择${column.columnComment}" clearable>
+          <el-option
+            v-for="dict in ${column.javaField}DictDatas"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
+        </el-select>
+#elseif ($column.htmlType == "datetime")
+        <el-date-picker
+          v-model="queryParams.${column.javaField}"
+          style="width: 240px"
+          value-format="yyyy-MM-dd HH:mm:ss"
+          type="daterange"
+          range-separator="-"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          :default-time="['00:00:00', '23:59:59']"
+        />
+#end
+      </el-form-item>
+#end
+#end
+      <el-form-item>
+        <el-button type="primary" icon="el-icon-search" @click="handleQuery">搜索</el-button>
+        <el-button icon="el-icon-refresh" @click="resetQuery">重置</el-button>
+      </el-form-item>
+    </el-form>
+
+    <!-- 操作工具栏 -->
+    <el-row :gutter="10" class="mb8">
+      <el-col :span="1.5">
+        <el-button
+          type="primary"
+          plain
+          icon="el-icon-plus"
+          size="mini"
+          @click="handleAdd"
+          v-hasPermi="['${table.moduleName}:${table.businessName}:create']"
+        >新增</el-button>
+      </el-col>
+      <el-col :span="1.5">
+        <el-button
+          type="warning"
+          plain
+          icon="el-icon-download"
+          size="mini"
+          @click="handleExport"
+          :loading="exportLoading"
+          v-hasPermi="['${table.moduleName}:${table.businessName}:export']"
+        >导出</el-button>
+      </el-col>
+      <right-toolbar :showSearch.sync="showSearch" @queryTable="getList"></right-toolbar>
+    </el-row>
+
+    <!-- 数据列表 -->
+    <el-table v-loading="loading" :data="${table.businessName}List">
+#foreach ($column in $listOperationResultColumns)
+      <el-table-column label="${column.columnComment}" align="center" prop="${column.javaField}" />
+#end
+      <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+        <template slot-scope="scope">
+          <el-button
+            size="mini"
+            type="text"
+            icon="el-icon-edit"
+            @click="handleUpdate(scope.row)"
+            v-hasPermi="['${table.moduleName}:${table.businessName}:update']"
+          >修改</el-button>
+          <el-button
+            size="mini"
+            type="text"
+            icon="el-icon-delete"
+            @click="handleDelete(scope.row)"
+            v-hasPermi="['${table.moduleName}:${table.businessName}:delete']"
+          >删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    
+    <!-- 分页组件 -->
+    <pagination
+      v-show="total > 0"
+      :total="total"
+      :page.sync="queryParams.pageNo"
+      :limit.sync="queryParams.pageSize"
+      @pagination="getList"
+    />
+
+    <!-- 对话框(添加 / 修改) -->
+    <el-dialog :title="title" :visible.sync="open" width="500px" append-to-body>
+      <el-form ref="form" :model="form" :rules="rules" label-width="80px">
+#foreach ($column in $createColumns)
+        <el-form-item label="${column.columnComment}" prop="${column.javaField}">
+#if ($column.htmlType == "input")
+          <el-input v-model="form.${column.javaField}" placeholder="请输入${column.columnComment}" />
+#elseif ($column.htmlType == "select")
+          <el-select v-model="form.${column.javaField}" placeholder="请选择${column.columnComment}">
+            <el-option
+              v-for="dict in ${column.javaField}DictDatas"
+              :key="dict.value"
+              :label="dict.label"
+              :value="dict.value"
+            />
+          </el-select>
+#elseif ($column.htmlType == "radio")
+          <el-radio-group v-model="form.${column.javaField}">
+            <el-radio
+              v-for="dict in ${column.javaField}DictDatas"
+              :key="dict.value"
+              :label="dict.value"
+            >{{ dict.label }}</el-radio>
+          </el-radio-group>
+#elseif ($column.htmlType == "datetime")
+          <el-date-picker clearable
+            v-model="form.${column.javaField}"
+            type="date"
+            value-format="yyyy-MM-dd"
+            placeholder="请选择${column.columnComment}">
+          </el-date-picker>
+#elseif ($column.htmlType == "textarea")
+          <el-input v-model="form.${column.javaField}" type="textarea" placeholder="请输入内容" />
+#end
+        </el-form-item>
+#end
+      </el-form>
+      <div slot="footer" class="dialog-footer">
+        <el-button type="primary" @click="submitForm">确 定</el-button>
+        <el-button @click="cancel">取 消</el-button>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script>
+import { list${table.className}, get${table.className}, del${table.className}, add${table.className}, update${table.className} } from "@/api/${table.moduleName}/${table.businessName}";
+
+export default {
+  name: "${table.className}",
+  data() {
+    return {
+      // 遮罩层
+      loading: true,
+      // 导出遮罩层
+      exportLoading: false,
+      // 显示搜索条件
+      showSearch: true,
+      // 总条数
+      total: 0,
+      // ${table.classComment}表格数据
+      ${table.businessName}List: [],
+      // 弹出层标题
+      title: "",
+      // 是否显示弹出层
+      open: false,
+      // 查询参数
+      queryParams: {
+        pageNo: 1,
+        pageSize: 10,
+#foreach ($column in $listColumns)
+#if ($column.listOperation)
+        ${column.javaField}: null,
+#end
+#end
+      },
+      // 表单参数
+      form: {},
+      // 表单校验
+      rules: {
+#foreach ($column in $createColumns)
+#if (!$column.nullable && !${column.primaryKey})
+        ${column.javaField}: [{ required: true, message: "${column.columnComment}不能为空", trigger: #if($column.htmlType == "select")"change"#else"blur"#end }],
+#end
+#end
+      }
+    };
+  },
+  created() {
+    this.getList();
+  },
+  methods: {
+    /** 查询列表 */
+    getList() {
+      this.loading = true;
+      list${table.className}(this.queryParams).then(response => {
+        this.${table.businessName}List = response.data.list;
+        this.total = response.data.total;
+        this.loading = false;
+      });
+    },
+    // 取消按钮
+    cancel() {
+      this.open = false;
+      this.reset();
+    },
+    // 表单重置
+    reset() {
+      this.form = {
+#foreach ($column in $createColumns)
+        ${column.javaField}: null,
+#end
+      };
+      this.resetForm("form");
+    },
+    /** 搜索按钮操作 */
+    handleQuery() {
+      this.queryParams.pageNo = 1;
+      this.getList();
+    },
+    /** 重置按钮操作 */
+    resetQuery() {
+      this.resetForm("queryForm");
+      this.handleQuery();
+    },
+    /** 新增按钮操作 */
+    handleAdd() {
+      this.reset();
+      this.open = true;
+      this.title = "添加${table.classComment}";
+    },
+    /** 修改按钮操作 */
+    handleUpdate(row) {
+      this.reset();
+      const ${primaryColumn.javaField} = row.${primaryColumn.javaField}
+      get${table.className}(${primaryColumn.javaField}).then(response => {
+        this.form = response.data;
+        this.open = true;
+        this.title = "修改${table.classComment}";
+      });
+    },
+    /** 提交按钮 */
+    submitForm() {
+      this.$refs["form"].validate(valid => {
+        if (valid) {
+          if (this.form.${primaryColumn.javaField} != null) {
+            update${table.className}(this.form).then(response => {
+              this.$modal.msgSuccess("修改成功");
+              this.open = false;
+              this.getList();
+            });
+          } else {
+            add${table.className}(this.form).then(response => {
+              this.$modal.msgSuccess("新增成功");
+              this.open = false;
+              this.getList();
+            });
+          }
+        }
+      });
+    },
+    /** 删除按钮操作 */
+    handleDelete(row) {
+      const ${primaryColumn.javaField}s = row.${primaryColumn.javaField};
+      this.$modal.confirm('是否确认删除${table.classComment}编号为"' + ${primaryColumn.javaField}s + '"的数据项？').then(function() {
+        return del${table.className}(${primaryColumn.javaField}s);
+      }).then(() => {
+        this.getList();
+        this.$modal.msgSuccess("删除成功");
+      }).catch(() => {});
+    },
+    /** 导出按钮操作 */
+    handleExport() {
+      this.download('${table.moduleName}/${table.businessName}/export-excel', {
+        ...this.queryParams
+      }, `${table.businessName}_#{new Date().getTime()}.xls`)
+    }
+  }
+};
+</script>
+```
+
+## 高级配置
+
+### 主子表生成
+```java
+// 主表配置
+CodegenTableDO masterTable = new CodegenTableDO();
+masterTable.setTemplateType(CodegenTemplateTypeEnum.MASTER_INNER.getType());
+
+// 子表配置  
+CodegenTableDO subTable = new CodegenTableDO();
+subTable.setMasterTableId(masterTable.getId());
+subTable.setSubJoinColumnName("master_id");
+subTable.setSubJoinMany(true);
+subTable.setTemplateType(CodegenTemplateTypeEnum.SUB.getType());
+```
+
+### 树表生成
+```java
+CodegenTableDO treeTable = new CodegenTableDO();
+treeTable.setTemplateType(CodegenTemplateTypeEnum.TREE.getType());
+treeTable.setTreeParentColumnName("parent_id");
+treeTable.setTreeNameColumnName("name");
+```
+
+### 字段高级配置
+```java
+// 字典类型设置
+CodegenColumnDO column = new CodegenColumnDO();
+column.setDictType("common_status");
+
+// HTML 类型设置
+column.setHtmlType("select"); // 下拉框
+column.setHtmlType("radio");  // 单选框
+column.setHtmlType("checkbox"); // 复选框
+column.setHtmlType("textarea"); // 文本域
+column.setHtmlType("datetime"); // 日期时间
+
+// 查询条件设置
+column.setListOperationCondition("LIKE");     // 模糊查询
+column.setListOperationCondition("BETWEEN");  // 范围查询
+column.setListOperationCondition("IN");       // 包含查询
+```
+
+## 自定义模板
+
+### 模板引擎
+代码生成器使用 **Velocity** 模板引擎，支持自定义模板。
+
+### 模板变量
+```velocity
+## 表信息
+$table.tableName        ## 表名
+$table.className        ## 类名
+$table.classComment     ## 类注释
+$table.moduleName       ## 模块名
+$table.businessName     ## 业务名
+
+## 字段信息
+#foreach($column in $columns)
+$column.columnName      ## 字段名
+$column.javaField       ## Java 属性名
+$column.javaType        ## Java 类型
+$column.columnComment   ## 字段注释
+$column.htmlType        ## HTML 类型
+#end
+
+## 工具方法
+$tool.firstLower($table.className)  ## 首字母小写
+$tool.firstUpper($table.businessName) ## 首字母大写
+```
+
+### 自定义模板示例
+```velocity
+package ${basePackage}.module.${table.moduleName}.enums;
+
+import ${baseFrameworkPackage}.common.core.IntArrayValuable;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
+import java.util.Arrays;
+
+/**
+ * ${table.classComment} 枚举类
+ *
+ * @author ${author}
+ * @date ${dateTime}
+ */
+@AllArgsConstructor
+@Getter
+public enum ${table.className}Enum implements IntArrayValuable {
+
+#foreach($column in $columns)
+#if($column.dictType && $column.dictType != "")
+    // TODO: 根据字典类型 ${column.dictType} 补充枚举值
+#end
+#end
+
+    ;
+
+    public static final int[] ARRAYS = Arrays.stream(values()).mapToInt(${table.className}Enum::getValue).toArray();
+
+    /**
+     * 值
+     */
+    private final Integer value;
+    /**
+     * 名字
+     */
+    private final String name;
+
+    @Override
+    public int[] array() {
+        return ARRAYS;
+    }
+}
+```
+
+## 代码生成最佳实践
+
+### 数据库表设计规范
+1. **表名规范**: 使用模块前缀，如 `system_user`
+2. **字段规范**: 包含基础字段（id, create_time, update_time 等）
+3. **注释完整**: 表和字段都要有详细注释
+4. **类型选择**: 合理选择字段类型和长度
+
+### 生成前配置检查
+1. **模块名**: 确认模块名正确
+2. **业务名**: 设置有意义的业务名
+3. **类注释**: 完善类注释信息
+4. **字段配置**: 检查字段的操作权限和显示类型
+5. **字典类型**: 为枚举字段设置字典类型
+
+### 生成后代码优化
+1. **业务逻辑**: 添加具体的业务校验逻辑
+2. **权限菜单**: 导入生成的菜单权限 SQL
+3. **前端优化**: 根据业务需求调整前端页面
+4. **测试验证**: 运行单元测试验证代码正确性
+
+### 版本控制
+1. **代码备份**: 生成前备份现有代码
+2. **分支管理**: 在独立分支中生成代码
+3. **合并策略**: 谨慎合并生成的代码到主分支
+4. **冲突解决**: 手工解决代码冲突
+
+## 扩展开发
+
+### 自定义模板类型
+```java
+@Component
+public class CustomCodegenTemplateLoader implements CodegenTemplateLoader {
+
+    @Override
+    public List<CodegenTemplateDO> getTemplateList(Integer templateType) {
+        if (Objects.equals(templateType, CustomTemplateTypeEnum.CUSTOM.getType())) {
+            return loadCustomTemplates();
+        }
+        return null;
+    }
+
+    private List<CodegenTemplateDO> loadCustomTemplates() {
+        // 加载自定义模板
+        return Arrays.asList(
+            buildTemplate("custom/controller.vm", "${table.moduleName}/${table.businessName}/controller/${table.className}Controller.java"),
+            buildTemplate("custom/service.vm", "${table.moduleName}/${table.businessName}/service/${table.className}Service.java")
+        );
+    }
+}
+```
+
+### 自定义字段类型映射
+```java
+@Component
+public class CustomColumnTypeMapping implements ColumnTypeMapping {
+
+    @Override
+    public String getJavaType(String columnType) {
+        if ("json".equalsIgnoreCase(columnType)) {
+            return "String"; // JSON 字段映射为 String
+        }
+        return null;
+    }
+
+    @Override
+    public String getHtmlType(CodegenColumnDO column) {
+        if ("json".equalsIgnoreCase(column.getDataType())) {
+            return "textarea"; // JSON 字段使用文本域
+        }
+        return null;
+    }
+}
+```
+
+### 代码生成插件
+```java
+@Component
+public class CodegenPlugin {
+
+    /**
+     * 生成前处理
+     */
+    public void beforeGenerate(CodegenTableDO table, List<CodegenColumnDO> columns) {
+        // 自定义预处理逻辑
+        log.info("开始生成代码: {}", table.getClassName());
+    }
+
+    /**
+     * 生成后处理
+     */
+    public void afterGenerate(CodegenTableDO table, Map<String, String> result) {
+        // 自定义后处理逻辑
+        log.info("代码生成完成: {}, 文件数: {}", table.getClassName(), result.size());
+        
+        // 可以在这里执行：
+        // 1. 代码格式化
+        // 2. 文件写入磁盘
+        // 3. Git 提交
+        // 4. 发送通知
+    }
+}
+```

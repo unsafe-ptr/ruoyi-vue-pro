@@ -1,0 +1,469 @@
+# API 设计规范
+
+## RESTful API 设计原则
+
+### URL 设计规范
+```
+/{应用类型}-api/{模块}/{业务对象}/{操作}
+
+示例：
+/admin-api/system/user/create          # 管理后台创建用户
+/admin-api/system/user/page           # 管理后台用户分页
+/app-api/member/user/profile          # 用户端获取个人信息
+```
+
+### HTTP 方法使用
+```http
+GET     /admin-api/system/user/get        # 获取单个资源
+GET     /admin-api/system/user/page       # 获取资源列表（分页）
+GET     /admin-api/system/user/list       # 获取资源列表（不分页）
+POST    /admin-api/system/user/create     # 创建资源
+PUT     /admin-api/system/user/update     # 更新资源
+DELETE  /admin-api/system/user/delete     # 删除资源
+```
+
+### 应用类型前缀
+- **admin-api**: 管理后台接口
+- **app-api**: 用户端 APP 接口
+- **mp-api**: 微信小程序接口
+
+## 统一响应格式
+
+### 成功响应
+```json
+{
+  "code": 0,
+  "data": {
+    "id": 1,
+    "username": "admin",
+    "nickname": "管理员"
+  },
+  "msg": ""
+}
+```
+
+### 错误响应
+```json
+{
+  "code": 1002001001,
+  "data": null,
+  "msg": "用户不存在"
+}
+```
+
+### 分页响应
+```json
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "username": "admin"
+      }
+    ],
+    "total": 100
+  },
+  "msg": ""
+}
+```
+
+## Controller 层实现规范
+
+### 标准 Controller 结构
+```java
+@RestController
+@RequestMapping("/admin-api/system/user")
+@Api(tags = "管理后台 - 用户管理")
+@Validated
+public class UserController {
+
+    @Resource
+    private UserService userService;
+
+    @PostMapping("/create")
+    @ApiOperation("创建用户")
+    @PreAuthorize("@ss.hasPermission('system:user:create')")
+    @OperateLog(type = CREATE)
+    public CommonResult<Long> createUser(@Valid @RequestBody UserCreateReqVO reqVO) {
+        return success(userService.createUser(reqVO));
+    }
+
+    @PutMapping("/update")  
+    @ApiOperation("修改用户")
+    @PreAuthorize("@ss.hasPermission('system:user:update')")
+    @OperateLog(type = UPDATE)
+    public CommonResult<Boolean> updateUser(@Valid @RequestBody UserUpdateReqVO reqVO) {
+        userService.updateUser(reqVO);
+        return success(true);
+    }
+
+    @DeleteMapping("/delete")
+    @ApiOperation("删除用户")
+    @PreAuthorize("@ss.hasPermission('system:user:delete')")
+    @OperateLog(type = DELETE)
+    public CommonResult<Boolean> deleteUser(@RequestParam("id") Long id) {
+        userService.deleteUser(id);
+        return success(true);
+    }
+
+    @GetMapping("/get")
+    @ApiOperation("获得用户")
+    @PreAuthorize("@ss.hasPermission('system:user:query')")
+    public CommonResult<UserRespVO> getUser(@RequestParam("id") Long id) {
+        UserDO user = userService.getUser(id);
+        return success(UserConvert.INSTANCE.convert(user));
+    }
+
+    @GetMapping("/page")
+    @ApiOperation("获得用户分页")
+    @PreAuthorize("@ss.hasPermission('system:user:query')")
+    public CommonResult<PageResult<UserRespVO>> getUserPage(@Valid UserPageReqVO reqVO) {
+        PageResult<UserDO> pageResult = userService.getUserPage(reqVO);
+        return success(UserConvert.INSTANCE.convertPage(pageResult));
+    }
+
+    @GetMapping("/list")
+    @ApiOperation("获得用户列表")  
+    @PreAuthorize("@ss.hasPermission('system:user:query')")
+    public CommonResult<List<UserRespVO>> getUserList(@Valid UserListReqVO reqVO) {
+        List<UserDO> list = userService.getUserList(reqVO);
+        return success(UserConvert.INSTANCE.convertList(list));
+    }
+}
+```
+
+### 必备注解使用
+```java
+// 类级别注解
+@RestController              // 声明为REST控制器
+@RequestMapping("/admin-api/system/user")  // 请求路径映射
+@Api(tags = "管理后台 - 用户管理")  // API文档分组
+@Validated                   // 启用参数校验
+
+// 方法级别注解
+@PostMapping("/create")      // HTTP方法映射
+@ApiOperation("创建用户")     // API文档说明
+@PreAuthorize("@ss.hasPermission('system:user:create')")  // 权限控制
+@OperateLog(type = CREATE)   // 操作日志
+```
+
+## 请求参数规范
+
+### 创建请求 VO
+```java
+@Data
+@ApiModel("用户创建 Request VO")
+public class UserCreateReqVO {
+
+    @ApiModelProperty(value = "用户账号", required = true, example = "admin")
+    @NotBlank(message = "用户账号不能为空")
+    @Size(max = 30, message = "用户账号长度不能超过30个字符")
+    private String username;
+
+    @ApiModelProperty(value = "用户昵称", required = true, example = "管理员")
+    @NotBlank(message = "用户昵称不能为空")
+    @Size(max = 30, message = "用户昵称长度不能超过30个字符")
+    private String nickname;
+
+    @ApiModelProperty(value = "用户邮箱", example = "admin@example.com")
+    @Email(message = "邮箱格式不正确")
+    @Size(max = 50, message = "邮箱长度不能超过50个字符")
+    private String email;
+
+    @ApiModelProperty(value = "手机号码", example = "15601691300")
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号码格式不正确")
+    private String mobile;
+
+    @ApiModelProperty(value = "用户性别", example = "1")
+    @InEnum(CommonStatusEnum.class, message = "修改状态必须是 {value}")
+    private Integer sex;
+
+    @ApiModelProperty(value = "部门ID", example = "1")
+    @NotNull(message = "部门不能为空")
+    private Long deptId;
+
+    @ApiModelProperty(value = "岗位编号数组", example = "1")
+    private Set<Long> postIds;
+
+    @ApiModelProperty(value = "用户角色编号数组", example = "1")
+    private Set<Long> roleIds;
+}
+```
+
+### 更新请求 VO
+```java
+@Data
+@ApiModel("用户更新 Request VO")  
+public class UserUpdateReqVO {
+
+    @ApiModelProperty(value = "用户编号", required = true, example = "1")
+    @NotNull(message = "用户编号不能为空")
+    private Long id;
+
+    // 其他字段与创建请求相同...
+}
+```
+
+### 分页查询 VO
+```java
+@Data
+@EqualsAndHashCode(callSuper = true)
+@ApiModel("用户分页 Request VO")
+public class UserPageReqVO extends PageParam {
+
+    @ApiModelProperty(value = "用户账号", example = "admin")
+    private String username;
+
+    @ApiModelProperty(value = "手机号码", example = "15601691300")
+    private String mobile;
+
+    @ApiModelProperty(value = "展示状态", example = "1")
+    @InEnum(CommonStatusEnum.class, message = "状态必须是 {value}")
+    private Integer status;
+
+    @ApiModelProperty(value = "创建时间", example = "[2022-07-01 00:00:00,2022-07-01 23:59:59]")
+    @DateTimeFormat(pattern = FORMAT_YEAR_MONTH_DAY_HOUR_MINUTE_SECOND)
+    private LocalDateTime[] createTime;
+
+    @ApiModelProperty(value = "部门编号", example = "1")
+    private Long deptId;
+}
+```
+
+## 响应参数规范
+
+### 响应 VO
+```java
+@Data
+@ApiModel("用户信息 Response VO")
+public class UserRespVO {
+
+    @ApiModelProperty(value = "用户编号", example = "1")
+    private Long id;
+
+    @ApiModelProperty(value = "用户账号", example = "admin")
+    private String username;
+
+    @ApiModelProperty(value = "用户昵称", example = "管理员")
+    private String nickname;
+
+    @ApiModelProperty(value = "用户邮箱", example = "admin@example.com")
+    private String email;
+
+    @ApiModelProperty(value = "手机号码", example = "15601691300")
+    private String mobile;
+
+    @ApiModelProperty(value = "用户性别", example = "1")
+    private Integer sex;
+
+    @ApiModelProperty(value = "用户头像", example = "https://www.example.com/avatar.jpg")
+    private String avatar;
+
+    @ApiModelProperty(value = "帐号状态", example = "1")
+    private Integer status;
+
+    @ApiModelProperty(value = "最后登录IP", example = "192.168.1.1")
+    private String loginIp;
+
+    @ApiModelProperty(value = "最后登录时间", example = "2022-01-01 00:00:00")
+    private LocalDateTime loginDate;
+
+    @ApiModelProperty(value = "创建时间", example = "2022-01-01 00:00:00")
+    private LocalDateTime createTime;
+
+    /**
+     * 所属角色
+     */
+    private Set<Long> roleIds;
+
+    /**
+     * 所属岗位
+     */
+    private Set<Long> postIds;
+
+    /**
+     * 所属部门
+     */
+    @ApiModelProperty(value = "部门编号", example = "1")
+    private Long deptId;
+}
+```
+
+## 参数校验规范
+
+### 常用校验注解
+```java
+// 非空校验
+@NotNull(message = "ID不能为空")
+@NotBlank(message = "用户名不能为空")
+@NotEmpty(message = "角色列表不能为空")
+
+// 长度校验
+@Size(min = 2, max = 30, message = "用户名长度必须在2-30字符之间")
+@Length(max = 50, message = "邮箱长度不能超过50个字符")
+
+// 格式校验
+@Email(message = "邮箱格式不正确")
+@Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号码格式不正确")
+
+// 数值校验
+@Min(value = 0, message = "年龄不能小于0")
+@Max(value = 150, message = "年龄不能大于150")
+@Range(min = 1, max = 100, message = "百分比必须在1-100之间")
+
+// 自定义校验
+@InEnum(CommonStatusEnum.class, message = "状态必须是 {value}")
+```
+
+### 分组校验
+```java
+// 定义校验分组
+public interface AddGroup {}
+public interface UpdateGroup {}
+
+// 在字段上使用分组
+@NotNull(groups = UpdateGroup.class, message = "ID不能为空")
+private Long id;
+
+@NotBlank(groups = {AddGroup.class, UpdateGroup.class}, message = "用户名不能为空")
+private String username;
+
+// 在Controller中指定分组
+@PostMapping("/create")
+public CommonResult<Long> createUser(@Validated(AddGroup.class) @RequestBody UserSaveReqVO reqVO) {
+    return success(userService.createUser(reqVO));
+}
+```
+
+## 异常处理规范
+
+### 全局异常处理
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    /**
+     * 处理业务异常
+     */
+    @ExceptionHandler(ServiceException.class)
+    public CommonResult<?> serviceExceptionHandler(ServiceException ex) {
+        log.info("[serviceExceptionHandler]", ex);
+        return CommonResult.error(ex.getCode(), ex.getMessage());
+    }
+
+    /**
+     * 处理参数校验异常
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public CommonResult<?> methodArgumentNotValidExceptionHandler(MethodArgumentNotValidException ex) {
+        FieldError fieldError = ex.getBindingResult().getFieldError();
+        assert fieldError != null;
+        return CommonResult.error(BAD_REQUEST.getCode(), String.format("请求参数不正确:%s", fieldError.getDefaultMessage()));
+    }
+}
+```
+
+### 业务异常抛出
+```java
+// 在Service中抛出业务异常
+public void validateUserExists(Long id) {
+    if (userMapper.selectById(id) == null) {
+        throw exception(USER_NOT_EXISTS);
+    }
+}
+
+// 错误码定义
+public interface ErrorCodeConstants {
+    ErrorCode USER_NOT_EXISTS = new ErrorCode(1002001001, "用户不存在");
+    ErrorCode USER_USERNAME_EXISTS = new ErrorCode(1002001002, "用户账号已经存在");
+}
+```
+
+## 接口文档规范
+
+### Swagger 注解使用
+```java
+@Api(tags = "管理后台 - 用户管理")  // 控制器分组
+@ApiOperation("创建用户")          // 接口说明
+@ApiParam(value = "用户ID", required = true)  // 参数说明
+
+@ApiModel("用户信息")              // 模型说明
+@ApiModelProperty(value = "用户编号", example = "1")  // 字段说明
+```
+
+### 接口文档示例
+```yaml
+# 生成的 OpenAPI 文档格式
+paths:
+  /admin-api/system/user/create:
+    post:
+      tags:
+        - 管理后台 - 用户管理
+      summary: 创建用户
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateReqVO'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommonResultLong'
+```
+
+## 版本管理
+
+### API 版本控制
+```java
+// 使用路径版本控制
+@RequestMapping("/admin-api/v1/system/user")
+
+// 使用请求头版本控制  
+@RequestMapping(value = "/admin-api/system/user", headers = "version=1.0")
+
+// 使用参数版本控制
+@RequestMapping(value = "/admin-api/system/user", params = "version=1.0")
+```
+
+### 向后兼容
+- 新增字段设为可选
+- 保持现有字段不变
+- 废弃字段标记 @Deprecated
+- 提供迁移指南
+
+## 性能优化
+
+### 批量操作
+```java
+@PostMapping("/batch-delete")
+@ApiOperation("批量删除用户")
+public CommonResult<Boolean> deleteUsers(@RequestBody Set<Long> ids) {
+    userService.deleteUsers(ids);
+    return success(true);
+}
+```
+
+### 异步处理
+```java
+@PostMapping("/export")
+@ApiOperation("导出用户数据")
+public CommonResult<String> exportUsers(@Valid UserExportReqVO reqVO) {
+    // 异步处理导出任务
+    String taskId = userService.exportUsersAsync(reqVO);
+    return success(taskId);
+}
+```
+
+### 缓存策略
+```java
+@GetMapping("/get")
+@Cacheable(value = "user", key = "#id")
+public CommonResult<UserRespVO> getUser(@RequestParam("id") Long id) {
+    UserDO user = userService.getUser(id);
+    return success(UserConvert.INSTANCE.convert(user));
+}
+```

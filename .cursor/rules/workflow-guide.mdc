@@ -1,0 +1,701 @@
+# 工作流使用指南
+
+## Flowable 工作流引擎
+
+### 核心概念
+- **流程定义 (Process Definition)**: 流程的静态描述
+- **流程实例 (Process Instance)**: 流程的运行实例
+- **任务 (Task)**: 需要人工处理的节点
+- **执行实例 (Execution)**: 流程执行的路径
+
+### 数据库表结构
+```sql
+-- 流程定义相关
+ACT_RE_DEPLOYMENT     -- 部署信息
+ACT_RE_PROCDEF        -- 流程定义
+
+-- 运行时数据
+ACT_RU_EXECUTION      -- 执行实例
+ACT_RU_TASK           -- 运行时任务
+ACT_RU_VARIABLE       -- 运行时变量
+
+-- 历史数据
+ACT_HI_PROCINST       -- 历史流程实例
+ACT_HI_TASKINST       -- 历史任务实例
+ACT_HI_ACTINST        -- 历史活动实例
+```
+
+## 流程设计器
+
+### BPMN 设计器
+支持标准 BPMN 2.0 规范，适合复杂流程设计：
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="leaveProcess" name="请假流程">
+    <startEvent id="startEvent" name="开始"/>
+    <userTask id="deptApproval" name="部门审批">
+      <assignee>${deptLeader}</assignee>
+    </userTask>
+    <userTask id="hrApproval" name="HR审批">
+      <assignee>${hrManager}</assignee>
+    </userTask>
+    <endEvent id="endEvent" name="结束"/>
+    
+    <sequenceFlow sourceRef="startEvent" targetRef="deptApproval"/>
+    <sequenceFlow sourceRef="deptApproval" targetRef="hrApproval"/>
+    <sequenceFlow sourceRef="hrApproval" targetRef="endEvent"/>
+  </process>
+</definitions>
+```
+
+### Simple 设计器 (仿钉钉)
+支持拖拽式流程设计，适合简单审批流程：
+```json
+{
+  "name": "请假流程",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "start",
+      "type": "START",
+      "name": "发起人"
+    },
+    {
+      "id": "approval1",
+      "type": "APPROVAL",
+      "name": "部门主管审批",
+      "assigneeType": "ROLE",
+      "assignees": ["dept_manager"]
+    },
+    {
+      "id": "approval2", 
+      "type": "APPROVAL",
+      "name": "HR审批",
+      "assigneeType": "USER",
+      "assignees": ["hr001"]
+    },
+    {
+      "id": "end",
+      "type": "END",
+      "name": "结束"
+    }
+  ]
+}
+```
+
+## 流程部署
+
+### 程序化部署
+```java
+@Service
+public class BpmDeploymentService {
+
+    @Resource
+    private RepositoryService repositoryService;
+
+    /**
+     * 部署 BPMN 流程
+     */
+    public String deployBpmnProcess(String processName, InputStream bpmnStream) {
+        Deployment deployment = repositoryService.createDeployment()
+            .name(processName)
+            .addInputStream(processName + ".bpmn20.xml", bpmnStream)
+            .deploy();
+        
+        return deployment.getId();
+    }
+
+    /**
+     * 删除流程部署
+     */
+    public void deleteDeployment(String deploymentId) {
+        repositoryService.deleteDeployment(deploymentId, true);
+    }
+
+    /**
+     * 获取流程定义列表
+     */
+    public List<ProcessDefinition> getProcessDefinitions() {
+        return repositoryService.createProcessDefinitionQuery()
+            .latestVersion()
+            .list();
+    }
+}
+```
+
+### 流程版本管理
+```java
+@Service
+public class ProcessVersionService {
+
+    /**
+     * 升级流程版本
+     */
+    public void upgradeProcessVersion(String processKey, InputStream newBpmn) {
+        // 部署新版本
+        String deploymentId = deployBpmnProcess(processKey + "_v2", newBpmn);
+        
+        // 迁移运行中的实例（可选）
+        migrateRunningInstances(processKey);
+    }
+
+    /**
+     * 迁移运行中的流程实例
+     */
+    private void migrateRunningInstances(String processKey) {
+        // 获取旧版本的流程实例
+        List<ProcessInstance> instances = runtimeService
+            .createProcessInstanceQuery()
+            .processDefinitionKey(processKey)
+            .list();
+        
+        // 执行实例迁移逻辑
+        for (ProcessInstance instance : instances) {
+            // 具体的迁移策略
+        }
+    }
+}
+```
+
+## 流程启动
+
+### 启动流程实例
+```java
+@Service
+public class BpmProcessService {
+
+    @Resource
+    private RuntimeService runtimeService;
+
+    /**
+     * 启动流程
+     */
+    public String startProcess(String processKey, String businessKey, 
+                             Map<String, Object> variables, Long startUserId) {
+        // 设置启动用户
+        identityService.setAuthenticatedUserId(String.valueOf(startUserId));
+        
+        // 启动流程实例
+        ProcessInstance processInstance = runtimeService
+            .startProcessInstanceByKey(processKey, businessKey, variables);
+        
+        return processInstance.getProcessInstanceId();
+    }
+
+    /**
+     * 启动流程（带表单数据）
+     */
+    public String startProcessWithForm(String processKey, String businessKey,
+                                     Map<String, Object> formData, Long startUserId) {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("formData", formData);
+        variables.put("startUserId", startUserId);
+        variables.put("startTime", new Date());
+        
+        return startProcess(processKey, businessKey, variables, startUserId);
+    }
+}
+```
+
+### 流程变量管理
+```java
+@Service
+public class ProcessVariableService {
+
+    /**
+     * 设置流程变量
+     */
+    public void setVariable(String processInstanceId, String variableName, Object value) {
+        runtimeService.setVariable(processInstanceId, variableName, value);
+    }
+
+    /**
+     * 获取流程变量
+     */
+    public Object getVariable(String processInstanceId, String variableName) {
+        return runtimeService.getVariable(processInstanceId, variableName);
+    }
+
+    /**
+     * 设置局部变量（任务级别）
+     */
+    public void setTaskLocalVariable(String taskId, String variableName, Object value) {
+        taskService.setVariableLocal(taskId, variableName, value);
+    }
+}
+```
+
+## 任务处理
+
+### 任务查询
+```java
+@Service
+public class BpmTaskService {
+
+    @Resource
+    private TaskService taskService;
+
+    /**
+     * 查询用户待办任务
+     */
+    public List<Task> getTodoTasks(Long userId) {
+        return taskService.createTaskQuery()
+            .taskAssignee(String.valueOf(userId))
+            .active()
+            .orderByTaskCreateTime()
+            .desc()
+            .list();
+    }
+
+    /**
+     * 查询用户参与的任务（候选用户）
+     */
+    public List<Task> getCandidateTasks(Long userId) {
+        return taskService.createTaskQuery()
+            .taskCandidateUser(String.valueOf(userId))
+            .active()
+            .orderByTaskCreateTime()
+            .desc()
+            .list();
+    }
+
+    /**
+     * 查询角色任务
+     */
+    public List<Task> getRoleTasks(String roleKey) {
+        return taskService.createTaskQuery()
+            .taskCandidateGroup(roleKey)
+            .active()
+            .orderByTaskCreateTime()
+            .desc()
+            .list();
+    }
+}
+```
+
+### 任务处理操作
+```java
+@Service
+public class TaskOperationService {
+
+    /**
+     * 完成任务
+     */
+    public void completeTask(String taskId, Map<String, Object> variables, Long userId) {
+        // 设置处理人
+        identityService.setAuthenticatedUserId(String.valueOf(userId));
+        
+        // 完成任务
+        taskService.complete(taskId, variables);
+        
+        // 记录操作日志
+        recordTaskOperation(taskId, "complete", userId);
+    }
+
+    /**
+     * 拒绝任务
+     */
+    public void rejectTask(String taskId, String reason, Long userId) {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("approved", false);
+        variables.put("rejectReason", reason);
+        
+        completeTask(taskId, variables, userId);
+    }
+
+    /**
+     * 转办任务
+     */
+    public void delegateTask(String taskId, Long targetUserId, Long currentUserId) {
+        // 设置任务委派
+        taskService.delegateTask(taskId, String.valueOf(targetUserId));
+        
+        // 记录操作
+        recordTaskOperation(taskId, "delegate", currentUserId);
+    }
+
+    /**
+     * 认领任务
+     */
+    public void claimTask(String taskId, Long userId) {
+        taskService.claim(taskId, String.valueOf(userId));
+        recordTaskOperation(taskId, "claim", userId);
+    }
+}
+```
+
+## 流程控制
+
+### 会签处理
+```java
+@Service
+public class MultiInstanceService {
+
+    /**
+     * 并行会签配置
+     */
+    public void configParallelMultiInstance(BpmnModelInstance modelInstance, 
+                                          String taskId, String collection) {
+        UserTask userTask = modelInstance.getModelElementById(taskId);
+        
+        // 设置多实例配置
+        MultiInstanceLoopCharacteristics multiInstance = 
+            modelInstance.newInstance(MultiInstanceLoopCharacteristics.class);
+        multiInstance.setSequential(false); // 并行执行
+        multiInstance.setCollection(collection);
+        multiInstance.setElementVariable("assignee");
+        
+        userTask.setLoopCharacteristics(multiInstance);
+    }
+
+    /**
+     * 串行会签配置
+     */
+    public void configSequentialMultiInstance(BpmnModelInstance modelInstance,
+                                            String taskId, String collection) {
+        UserTask userTask = modelInstance.getModelElementById(taskId);
+        
+        MultiInstanceLoopCharacteristics multiInstance = 
+            modelInstance.newInstance(MultiInstanceLoopCharacteristics.class);
+        multiInstance.setSequential(true); // 串行执行
+        multiInstance.setCollection(collection);
+        multiInstance.setElementVariable("assignee");
+        
+        userTask.setLoopCharacteristics(multiInstance);
+    }
+}
+```
+
+### 动态任务分配
+```java
+@Component
+public class TaskAssignmentService {
+
+    /**
+     * 根据部门分配任务
+     */
+    public String assignByDept(DelegateTask delegateTask) {
+        // 获取发起人部门
+        String startUserId = delegateTask.getVariable("startUserId").toString();
+        UserDO startUser = userService.getUser(Long.valueOf(startUserId));
+        
+        // 查找部门主管
+        UserDO deptManager = userService.getDeptManager(startUser.getDeptId());
+        
+        return String.valueOf(deptManager.getId());
+    }
+
+    /**
+     * 根据金额分配任务
+     */
+    public String assignByAmount(DelegateTask delegateTask) {
+        BigDecimal amount = (BigDecimal) delegateTask.getVariable("amount");
+        
+        if (amount.compareTo(new BigDecimal("10000")) > 0) {
+            // 大于1万，总经理审批
+            return "general_manager";
+        } else if (amount.compareTo(new BigDecimal("5000")) > 0) {
+            // 大于5千，部门经理审批  
+            return "dept_manager";
+        } else {
+            // 直接主管审批
+            return "direct_supervisor";
+        }
+    }
+}
+```
+
+## 流程监控
+
+### 流程实例监控
+```java
+@Service
+public class ProcessMonitorService {
+
+    /**
+     * 获取流程实例状态
+     */
+    public ProcessInstanceInfo getProcessInstanceInfo(String processInstanceId) {
+        // 获取流程实例
+        ProcessInstance processInstance = runtimeService
+            .createProcessInstanceQuery()
+            .processInstanceId(processInstanceId)
+            .singleResult();
+        
+        if (processInstance != null) {
+            // 运行中
+            return buildRunningInstanceInfo(processInstance);
+        } else {
+            // 已结束，查询历史
+            HistoricProcessInstance historicInstance = historyService
+                .createHistoricProcessInstanceQuery()
+                .processInstanceId(processInstanceId)
+                .singleResult();
+            
+            return buildFinishedInstanceInfo(historicInstance);
+        }
+    }
+
+    /**
+     * 获取当前活动任务
+     */
+    public List<Task> getCurrentTasks(String processInstanceId) {
+        return taskService.createTaskQuery()
+            .processInstanceId(processInstanceId)
+            .active()
+            .list();
+    }
+
+    /**
+     * 获取流程轨迹
+     */
+    public List<ActivityInstance> getProcessTrace(String processInstanceId) {
+        return historyService.createHistoricActivityInstanceQuery()
+            .processInstanceId(processInstanceId)
+            .orderByHistoricActivityInstanceStartTime()
+            .asc()
+            .list();
+    }
+}
+```
+
+### 流程统计分析
+```java
+@Service
+public class ProcessAnalyticsService {
+
+    /**
+     * 统计流程执行时长
+     */
+    public ProcessDurationStats getProcessDurationStats(String processKey) {
+        // 查询已完成的流程实例
+        List<HistoricProcessInstance> instances = historyService
+            .createHistoricProcessInstanceQuery()
+            .processDefinitionKey(processKey)
+            .finished()
+            .list();
+        
+        // 计算统计数据
+        return calculateDurationStats(instances);
+    }
+
+    /**
+     * 统计任务处理效率
+     */
+    public TaskEfficiencyStats getTaskEfficiencyStats(String taskDefinitionKey) {
+        List<HistoricTaskInstance> tasks = historyService
+            .createHistoricTaskInstanceQuery()
+            .taskDefinitionKey(taskDefinitionKey)
+            .finished()
+            .list();
+        
+        return calculateTaskEfficiency(tasks);
+    }
+
+    /**
+     * 获取流程热力图数据
+     */
+    public Map<String, Integer> getProcessHeatmapData(String processKey) {
+        // 统计各个节点的通过次数
+        Map<String, Integer> heatmap = new HashMap<>();
+        
+        List<HistoricActivityInstance> activities = historyService
+            .createHistoricActivityInstanceQuery()
+            .processDefinitionKey(processKey)
+            .list();
+        
+        for (HistoricActivityInstance activity : activities) {
+            String activityId = activity.getActivityId();
+            heatmap.put(activityId, heatmap.getOrDefault(activityId, 0) + 1);
+        }
+        
+        return heatmap;
+    }
+}
+```
+
+## 表单集成
+
+### 动态表单配置
+```java
+@Service
+public class FormConfigService {
+
+    /**
+     * 获取任务表单配置
+     */
+    public FormConfigVO getTaskFormConfig(String taskId) {
+        Task task = taskService.createTaskQuery()
+            .taskId(taskId)
+            .singleResult();
+        
+        // 获取表单配置
+        String formKey = task.getFormKey();
+        return formConfigMapper.selectByFormKey(formKey);
+    }
+
+    /**
+     * 渲染表单字段
+     */
+    public List<FormFieldVO> renderFormFields(String taskId) {
+        FormConfigVO formConfig = getTaskFormConfig(taskId);
+        List<FormFieldVO> fields = JSON.parseArray(formConfig.getFieldsConfig(), FormFieldVO.class);
+        
+        // 设置字段权限（可读、可写、隐藏）
+        setFieldPermissions(fields, taskId);
+        
+        return fields;
+    }
+
+    /**
+     * 设置字段权限
+     */
+    private void setFieldPermissions(List<FormFieldVO> fields, String taskId) {
+        Task task = taskService.createTaskQuery().taskId(taskId).singleResult();
+        String taskDefinitionKey = task.getTaskDefinitionKey();
+        
+        // 根据任务节点设置字段权限
+        for (FormFieldVO field : fields) {
+            TaskFieldPermissionDO permission = taskFieldPermissionMapper
+                .selectByTaskAndField(taskDefinitionKey, field.getFieldKey());
+            
+            if (permission != null) {
+                field.setPermission(permission.getPermission());
+            }
+        }
+    }
+}
+```
+
+### 表单数据处理
+```java
+@Service
+public class FormDataService {
+
+    /**
+     * 保存表单数据
+     */
+    public void saveFormData(String taskId, Map<String, Object> formData) {
+        // 验证表单数据
+        validateFormData(taskId, formData);
+        
+        // 保存到流程变量
+        for (Map.Entry<String, Object> entry : formData.entrySet()) {
+            taskService.setVariable(taskId, entry.getKey(), entry.getValue());
+        }
+        
+        // 保存到业务表
+        saveToBusinessTable(taskId, formData);
+    }
+
+    /**
+     * 获取表单数据
+     */
+    public Map<String, Object> getFormData(String taskId) {
+        Map<String, Object> formData = new HashMap<>();
+        
+        // 从流程变量获取
+        Map<String, Object> variables = taskService.getVariables(taskId);
+        formData.putAll(variables);
+        
+        // 从业务表获取
+        Map<String, Object> businessData = getFromBusinessTable(taskId);
+        formData.putAll(businessData);
+        
+        return formData;
+    }
+}
+```
+
+## 流程扩展
+
+### 自定义监听器
+```java
+@Component
+public class CustomTaskListener implements TaskListener {
+
+    @Override
+    public void notify(DelegateTask delegateTask) {
+        String eventName = delegateTask.getEventName();
+        
+        switch (eventName) {
+            case EVENTNAME_CREATE:
+                handleTaskCreate(delegateTask);
+                break;
+            case EVENTNAME_ASSIGNMENT:
+                handleTaskAssignment(delegateTask);
+                break;
+            case EVENTNAME_COMPLETE:
+                handleTaskComplete(delegateTask);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void handleTaskCreate(DelegateTask delegateTask) {
+        // 任务创建时的处理逻辑
+        // 例如：发送通知、记录日志等
+        sendTaskNotification(delegateTask);
+    }
+
+    private void handleTaskAssignment(DelegateTask delegateTask) {
+        // 任务分配时的处理逻辑
+        recordTaskAssignment(delegateTask);
+    }
+
+    private void handleTaskComplete(DelegateTask delegateTask) {
+        // 任务完成时的处理逻辑
+        updateBusinessStatus(delegateTask);
+    }
+}
+```
+
+### 自定义服务任务
+```java
+@Component("customServiceTask")
+public class CustomServiceTask implements JavaDelegate {
+
+    @Override
+    public void execute(DelegateExecution execution) {
+        // 获取流程变量
+        String businessKey = execution.getProcessBusinessKey();
+        Map<String, Object> variables = execution.getVariables();
+        
+        // 执行业务逻辑
+        Object result = executeBusinessLogic(businessKey, variables);
+        
+        // 设置返回变量
+        execution.setVariable("serviceResult", result);
+    }
+
+    private Object executeBusinessLogic(String businessKey, Map<String, Object> variables) {
+        // 具体的业务处理逻辑
+        // 例如：调用外部服务、更新数据库等
+        return "处理完成";
+    }
+}
+```
+
+## 最佳实践
+
+### 流程设计原则
+1. **简化流程**: 避免过于复杂的流程设计
+2. **明确责任**: 每个节点都要有明确的责任人
+3. **异常处理**: 考虑各种异常情况的处理
+4. **性能优化**: 避免长时间运行的流程
+5. **版本管理**: 合理管理流程版本升级
+
+### 性能优化建议
+1. **分页查询**: 大量任务数据使用分页
+2. **索引优化**: 为常用查询字段添加索引
+3. **历史数据清理**: 定期清理历史流程数据
+4. **缓存策略**: 缓存流程定义和用户信息
+5. **异步处理**: 耗时操作使用异步任务
+
+### 监控告警
+1. **流程超时**: 监控长时间未处理的任务
+2. **错误率**: 监控流程执行错误率
+3. **性能指标**: 监控流程执行时长
+4. **资源使用**: 监控数据库和内存使用情况

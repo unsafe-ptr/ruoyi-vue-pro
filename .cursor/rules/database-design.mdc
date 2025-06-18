@@ -1,0 +1,295 @@
+# 数据库设计规范
+
+## 表命名规范
+
+### 模块表前缀
+- **系统模块**: `system_` (如: system_users, system_role)
+- **基础设施**: `infra_` (如: infra_file, infra_config)
+- **工作流**: `bpm_` (如: bpm_process_instance)
+- **支付模块**: `pay_` (如: pay_order, pay_channel)
+- **商城模块**: `mall_` (如: mall_product, mall_order)
+- **会员模块**: `member_` (如: member_user, member_level)
+- **CRM模块**: `crm_` (如: crm_customer, crm_contract)
+- **ERP模块**: `erp_` (如: erp_product, erp_stock)
+
+### 表名规范
+- 使用小写字母和下划线
+- 表名要有意义，能表达业务含义
+- 避免使用系统保留字
+- 中间表命名：`主表_从表` 或 `模块_relation`
+
+## 字段设计规范
+
+### 必备字段 (BaseEntity)
+每个业务表都应包含以下基础字段：
+```sql
+-- 主键 (雪花算法生成)
+id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+
+-- 创建信息
+creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+-- 更新信息  
+updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+-- 逻辑删除
+deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+
+-- 多租户 (SaaS版本必须)
+tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户编号'
+```
+
+### 字段命名规范
+- 使用小写字母和下划线
+- 布尔类型字段使用 `is_` 前缀
+- 时间字段使用 `_time` 后缀  
+- 状态字段使用 `status` 或 `state`
+- 外键字段使用 `表名_id` 格式
+
+### 字段类型选择
+```sql
+-- 主键
+BIGINT AUTO_INCREMENT
+
+-- 字符串
+VARCHAR(255)        -- 普通字符串
+VARCHAR(1024)       -- 长字符串  
+TEXT                -- 超长文本 (如备注)
+
+-- 数值
+TINYINT             -- 状态、类型 (0-255)
+SMALLINT            -- 小整数 (-32768 到 32767)
+INT                 -- 普通整数
+BIGINT              -- 大整数、金额(分)
+DECIMAL(10,2)       -- 精确小数 (金额元)
+
+-- 时间
+DATETIME            -- 日期时间
+DATE                -- 日期
+TIME                -- 时间
+
+-- 布尔
+BIT                 -- 是否字段 (0/1)
+```
+
+## 索引设计规范
+
+### 主键索引
+```sql
+PRIMARY KEY (`id`) USING BTREE
+```
+
+### 普通索引
+```sql
+-- 单列索引
+KEY `idx_username` (`username`) USING BTREE,
+KEY `idx_create_time` (`create_time`) USING BTREE,
+KEY `idx_status` (`status`) USING BTREE,
+
+-- 复合索引 (注意字段顺序)
+KEY `idx_tenant_status` (`tenant_id`, `status`) USING BTREE,
+KEY `idx_user_dept` (`user_id`, `dept_id`) USING BTREE
+```
+
+### 唯一索引
+```sql
+-- 业务唯一约束
+UNIQUE KEY `uk_username` (`username`, `tenant_id`) USING BTREE,
+UNIQUE KEY `uk_mobile` (`mobile`) USING BTREE
+```
+
+### 索引设计原则
+1. **选择性高的字段**: 优先为区分度高的字段建索引
+2. **查询频繁的字段**: 经常用于 WHERE 条件的字段
+3. **复合索引顺序**: 高选择性字段在前，查询条件字段在前
+4. **避免过多索引**: 影响写入性能，一般不超过5个
+
+## 多租户设计
+
+### 租户隔离方案
+```sql
+-- 所有业务表都添加租户字段
+tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户编号',
+
+-- 复合唯一索引包含租户ID
+UNIQUE KEY `uk_username_tenant` (`username`, `tenant_id`) USING BTREE,
+
+-- 查询索引包含租户ID  
+KEY `idx_tenant_status` (`tenant_id`, `status`) USING BTREE
+```
+
+### 系统表设计
+系统级表不需要租户隔离：
+```sql
+-- 租户表本身
+CREATE TABLE system_tenant (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '租户编号',
+    name VARCHAR(30) NOT NULL COMMENT '租户名',
+    -- ... 其他字段，无需 tenant_id
+);
+
+-- 租户套餐表
+CREATE TABLE system_tenant_package (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '套餐编号', 
+    name VARCHAR(30) NOT NULL COMMENT '套餐名',
+    -- ... 其他字段，无需 tenant_id
+);
+```
+
+## 逻辑删除设计
+
+### 删除标记
+```sql
+-- 使用 BIT 类型
+deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+
+-- 0: 未删除
+-- 1: 已删除
+```
+
+### 查询处理
+```sql
+-- 查询时过滤已删除数据
+SELECT * FROM system_users 
+WHERE deleted = 0 
+  AND tenant_id = #{tenantId};
+```
+
+### 唯一约束处理
+```sql
+-- 唯一索引需要包含 deleted 字段
+UNIQUE KEY `uk_username_tenant` (`username`, `tenant_id`, `deleted`) USING BTREE
+```
+
+## 常用表结构示例
+
+### 用户表
+```sql
+CREATE TABLE system_users (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+    username VARCHAR(30) NOT NULL COMMENT '用户账号',
+    password VARCHAR(100) DEFAULT '' COMMENT '密码',
+    nickname VARCHAR(30) NOT NULL COMMENT '用户昵称',
+    email VARCHAR(50) DEFAULT '' COMMENT '用户邮箱',
+    mobile VARCHAR(11) DEFAULT '' COMMENT '手机号码',
+    sex TINYINT DEFAULT 0 COMMENT '用户性别',
+    avatar VARCHAR(512) DEFAULT '' COMMENT '头像地址',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '帐号状态',
+    login_ip VARCHAR(50) DEFAULT '' COMMENT '最后登录IP',
+    login_date DATETIME COMMENT '最后登录时间',
+    
+    -- 基础字段
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者', 
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+    tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户编号',
+    
+    -- 索引
+    PRIMARY KEY (id) USING BTREE,
+    UNIQUE KEY uk_username (username, tenant_id, deleted) USING BTREE,
+    UNIQUE KEY uk_mobile (mobile, tenant_id, deleted) USING BTREE,
+    KEY idx_tenant_status (tenant_id, status) USING BTREE,
+    KEY idx_create_time (create_time) USING BTREE
+) ENGINE=InnoDB COMMENT='用户信息表';
+```
+
+### 配置表
+```sql
+CREATE TABLE infra_config (
+    id INT NOT NULL AUTO_INCREMENT COMMENT '参数主键',
+    category VARCHAR(50) DEFAULT NULL COMMENT '参数分组',
+    type TINYINT NOT NULL COMMENT '参数类型',
+    name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '参数名称',
+    config_key VARCHAR(100) NOT NULL DEFAULT '' COMMENT '参数键名',
+    value VARCHAR(500) NOT NULL DEFAULT '' COMMENT '参数键值',
+    visible BIT NOT NULL COMMENT '是否可见',
+    remark VARCHAR(500) DEFAULT NULL COMMENT '备注',
+    
+    -- 基础字段
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+    
+    -- 索引
+    PRIMARY KEY (id) USING BTREE,
+    UNIQUE KEY uk_config_key (config_key, deleted) USING BTREE,
+    KEY idx_category (category) USING BTREE,
+    KEY idx_type (type) USING BTREE
+) ENGINE=InnoDB COMMENT='参数配置表';
+```
+
+## 性能优化建议
+
+### 分表分库策略
+```sql
+-- 按租户分表 (大租户场景)
+CREATE TABLE system_users_1 LIKE system_users;
+CREATE TABLE system_users_2 LIKE system_users;
+
+-- 按时间分表 (日志表)
+CREATE TABLE system_operate_log_202401 LIKE system_operate_log;
+CREATE TABLE system_operate_log_202402 LIKE system_operate_log;
+```
+
+### 读写分离
+- 主库: 写操作
+- 从库: 读操作
+- 使用 `@DS("slave")` 注解指定数据源
+
+### 连接池配置
+```yaml
+spring:
+  datasource:
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      validation-query: SELECT 1
+```
+
+## 数据库变更管理
+
+### 版本控制
+- 使用 Flyway 管理数据库版本
+- SQL 文件命名: `V{版本号}__{描述}.sql`
+- 存放路径: `src/main/resources/db/migration/`
+
+### 变更脚本示例
+```sql
+-- V2.6.0__add_user_avatar.sql
+ALTER TABLE system_users 
+ADD COLUMN avatar VARCHAR(512) DEFAULT '' COMMENT '头像地址' 
+AFTER mobile;
+
+-- 更新索引
+ALTER TABLE system_users 
+ADD INDEX idx_avatar (avatar) USING BTREE;
+```
+
+### 数据迁移
+```sql
+-- 数据迁移脚本
+INSERT INTO new_table (field1, field2) 
+SELECT old_field1, old_field2 
+FROM old_table 
+WHERE condition;
+```
+
+## 监控和维护
+
+### 性能监控
+- 慢查询日志: `slow_query_log = ON`
+- 执行计划分析: `EXPLAIN` 语句
+- 索引使用率: `SHOW INDEX` 统计
+
+### 定期维护
+- 表空间清理: `OPTIMIZE TABLE`
+- 统计信息更新: `ANALYZE TABLE`  
+- 索引重建: `ALTER TABLE ... ENGINE=InnoDB`

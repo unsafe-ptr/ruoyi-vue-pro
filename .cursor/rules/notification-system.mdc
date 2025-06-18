@@ -1,0 +1,866 @@
+# 消息通知系统
+
+## 通知系统架构
+
+### 通知类型
+- **站内信**: 系统内部消息通知
+- **邮件通知**: 电子邮件发送
+- **短信通知**: 手机短信发送
+- **微信通知**: 微信公众号/小程序推送
+- **系统公告**: 全站公告通知
+
+### 核心模块
+- **通知模板**: 消息模板管理
+- **通知渠道**: 发送渠道配置
+- **通知日志**: 发送记录和状态
+- **通知队列**: 异步消息处理
+
+## 站内信系统
+
+### 站内信表结构
+```sql
+-- 站内信模板表
+CREATE TABLE system_notify_template (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    name VARCHAR(63) NOT NULL COMMENT '模板名称',
+    code VARCHAR(64) NOT NULL COMMENT '模板编码',
+    nickname VARCHAR(255) NOT NULL COMMENT '发送人名称',
+    content TEXT NOT NULL COMMENT '模板内容',
+    type TINYINT NOT NULL COMMENT '类型',
+    params VARCHAR(255) DEFAULT NULL COMMENT '参数数组',
+    status TINYINT NOT NULL COMMENT '开启状态',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+    tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户编号'
+);
+
+-- 站内信消息表
+CREATE TABLE system_notify_message (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+    user_id BIGINT NOT NULL COMMENT '用户id',
+    user_type TINYINT NOT NULL DEFAULT 0 COMMENT '用户类型',
+    template_id BIGINT NOT NULL COMMENT '模版编号',
+    template_code VARCHAR(64) NOT NULL COMMENT '模板编码',
+    template_nickname VARCHAR(63) NOT NULL COMMENT '模版发送人名称',
+    template_content TEXT NOT NULL COMMENT '模版内容',
+    template_type TINYINT NOT NULL COMMENT '模版类型',
+    template_params VARCHAR(255) NOT NULL COMMENT '模版参数',
+    read_status BIT NOT NULL COMMENT '是否已读',
+    read_time DATETIME DEFAULT NULL COMMENT '阅读时间',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+    tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户编号'
+);
+```
+
+### 站内信服务
+```java
+@Service
+public class NotifyMessageServiceImpl implements NotifyMessageService {
+
+    @Resource
+    private NotifyMessageMapper notifyMessageMapper;
+    
+    @Resource
+    private NotifyTemplateService notifyTemplateService;
+
+    @Override
+    public Long createNotifyMessage(Long userId, Integer userType,
+                                   NotifyTemplateReqDTO templateReq) {
+        // 获取消息模板
+        NotifyTemplateDO template = notifyTemplateService.getNotifyTemplate(templateReq.getTemplateCode());
+        
+        // 渲染模板内容
+        String content = renderTemplateContent(template, templateReq.getTemplateParams());
+        
+        // 创建消息
+        NotifyMessageDO message = new NotifyMessageDO();
+        message.setUserId(userId);
+        message.setUserType(userType);
+        message.setTemplateId(template.getId());
+        message.setTemplateCode(template.getCode());
+        message.setTemplateNickname(template.getNickname());
+        message.setTemplateContent(content);
+        message.setTemplateType(template.getType());
+        message.setTemplateParams(JsonUtils.toJsonString(templateReq.getTemplateParams()));
+        message.setReadStatus(false);
+        
+        notifyMessageMapper.insert(message);
+        return message.getId();
+    }
+
+    @Override
+    public PageResult<NotifyMessageDO> getNotifyMessagePage(Long userId, 
+                                                           NotifyMessagePageReqVO pageReqVO) {
+        return notifyMessageMapper.selectPage(userId, pageReqVO);
+    }
+
+    @Override
+    public void markAsRead(Long userId, Long messageId) {
+        NotifyMessageDO message = validateNotifyMessageExists(messageId);
+        
+        // 校验用户权限
+        if (!Objects.equals(message.getUserId(), userId)) {
+            throw exception(NOTIFY_MESSAGE_NOT_BELONGS_TO_USER);
+        }
+        
+        // 标记已读
+        if (!message.getReadStatus()) {
+            NotifyMessageDO updateObj = new NotifyMessageDO();
+            updateObj.setId(messageId);
+            updateObj.setReadStatus(true);
+            updateObj.setReadTime(new Date());
+            notifyMessageMapper.updateById(updateObj);
+        }
+    }
+
+    @Override
+    public void markAllAsRead(Long userId) {
+        notifyMessageMapper.updateReadStatusByUserId(userId);
+    }
+
+    @Override
+    public Long getUnreadCount(Long userId) {
+        return notifyMessageMapper.selectUnreadCountByUserId(userId);
+    }
+
+    /**
+     * 渲染模板内容
+     */
+    private String renderTemplateContent(NotifyTemplateDO template, Map<String, Object> params) {
+        String content = template.getContent();
+        
+        // 使用占位符替换参数
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            String placeholder = "{" + entry.getKey() + "}";
+            String value = String.valueOf(entry.getValue());
+            content = content.replace(placeholder, value);
+        }
+        
+        return content;
+    }
+}
+```
+
+### 站内信模板管理
+```java
+@Service
+public class NotifyTemplateServiceImpl implements NotifyTemplateService {
+
+    @Override
+    public Long createNotifyTemplate(NotifyTemplateCreateReqVO reqVO) {
+        // 校验模板编码唯一性
+        validateTemplateCodeDuplicate(null, reqVO.getCode());
+        
+        // 创建模板
+        NotifyTemplateDO template = NotifyTemplateConvert.INSTANCE.convert(reqVO);
+        template.setParams(buildTemplateParams(reqVO.getContent()));
+        notifyTemplateMapper.insert(template);
+        
+        return template.getId();
+    }
+
+    @Override
+    public void updateNotifyTemplate(NotifyTemplateUpdateReqVO reqVO) {
+        // 校验模板存在
+        validateNotifyTemplateExists(reqVO.getId());
+        
+        // 校验编码唯一性
+        validateTemplateCodeDuplicate(reqVO.getId(), reqVO.getCode());
+        
+        // 更新模板
+        NotifyTemplateDO updateObj = NotifyTemplateConvert.INSTANCE.convert(reqVO);
+        updateObj.setParams(buildTemplateParams(reqVO.getContent()));
+        notifyTemplateMapper.updateById(updateObj);
+    }
+
+    /**
+     * 解析模板参数
+     */
+    private String buildTemplateParams(String content) {
+        Set<String> params = new HashSet<>();
+        
+        // 提取 {参数名} 格式的参数
+        Pattern pattern = Pattern.compile("\\{([^}]+)\\}");
+        Matcher matcher = pattern.matcher(content);
+        
+        while (matcher.find()) {
+            params.add(matcher.group(1));
+        }
+        
+        return JsonUtils.toJsonString(new ArrayList<>(params));
+    }
+}
+```
+
+## 邮件通知系统
+
+### 邮件配置
+```yaml
+spring:
+  mail:
+    host: smtp.qq.com
+    port: 587
+    username: your-email@qq.com
+    password: your-password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+```
+
+### 邮件模板管理
+```sql
+-- 邮件模板表
+CREATE TABLE system_mail_template (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '编号',
+    name VARCHAR(63) NOT NULL COMMENT '模板名称',
+    code VARCHAR(63) NOT NULL COMMENT '模板编码',
+    account_id BIGINT NOT NULL COMMENT '发送的邮箱账号编号',
+    nickname VARCHAR(255) DEFAULT NULL COMMENT '发送人名称',
+    title VARCHAR(255) NOT NULL COMMENT '邮件标题',
+    content TEXT NOT NULL COMMENT '邮件内容',
+    params VARCHAR(255) NOT NULL COMMENT '参数数组',
+    status TINYINT NOT NULL COMMENT '开启状态',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+```
+
+### 邮件发送服务
+```java
+@Service
+public class MailSendServiceImpl implements MailSendService {
+
+    @Resource
+    private JavaMailSender mailSender;
+    
+    @Resource
+    private MailTemplateService mailTemplateService;
+    
+    @Resource
+    private MailLogService mailLogService;
+
+    @Override
+    @Async
+    public Long sendSingleMail(String mail, Long userId, Integer userType, 
+                               String templateCode, Map<String, Object> templateParams) {
+        // 检查邮箱格式
+        if (!Validator.isEmail(mail)) {
+            throw exception(MAIL_SEND_MAIL_NOT_VALID, mail);
+        }
+        
+        // 获取邮件模板
+        MailTemplateDO template = mailTemplateService.getMailTemplateByCodeFromCache(templateCode);
+        
+        // 渲染邮件内容
+        String title = renderTemplateContent(template.getTitle(), templateParams);
+        String content = renderTemplateContent(template.getContent(), templateParams);
+        
+        // 创建发送日志
+        Long sendLogId = mailLogService.createMailLog(userId, userType, mail, 
+                                                     template, templateParams);
+        
+        try {
+            // 发送邮件
+            doSendMail(template, mail, title, content);
+            
+            // 更新发送状态
+            mailLogService.updateMailSendResult(sendLogId, true, null);
+            
+        } catch (Exception e) {
+            // 更新发送失败状态
+            mailLogService.updateMailSendResult(sendLogId, false, e.getMessage());
+            log.error("[sendSingleMail][发送邮件失败, mail:{}, template:{}]", mail, templateCode, e);
+            throw exception(MAIL_SEND_ERROR);
+        }
+        
+        return sendLogId;
+    }
+
+    @Override
+    @Async
+    public void sendBatchMail(List<String> mails, String templateCode, 
+                             Map<String, Object> templateParams) {
+        for (String mail : mails) {
+            try {
+                sendSingleMail(mail, null, null, templateCode, templateParams);
+            } catch (Exception e) {
+                log.error("[sendBatchMail][发送邮件失败, mail:{}, template:{}]", mail, templateCode, e);
+            }
+        }
+    }
+
+    /**
+     * 执行邮件发送
+     */
+    private void doSendMail(MailTemplateDO template, String toMail, 
+                           String title, String content) throws Exception {
+        // 获取邮箱账号配置
+        MailAccountDO account = mailAccountService.getMailAccount(template.getAccountId());
+        
+        // 创建邮件消息
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+        
+        // 设置发件人
+        helper.setFrom(account.getMail(), template.getNickname());
+        
+        // 设置收件人
+        helper.setTo(toMail);
+        
+        // 设置邮件主题和内容
+        helper.setSubject(title);
+        helper.setText(content, true); // true 表示支持 HTML
+        
+        // 发送邮件
+        mailSender.send(message);
+    }
+}
+```
+
+## 短信通知系统
+
+### 短信渠道配置
+```sql
+-- 短信渠道表
+CREATE TABLE system_sms_channel (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '编号',
+    signature VARCHAR(12) NOT NULL COMMENT '短信签名',
+    code VARCHAR(63) NOT NULL COMMENT '渠道编码',
+    status TINYINT NOT NULL COMMENT '开启状态',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    api_key VARCHAR(128) NOT NULL COMMENT '短信 API 的账号',
+    api_secret VARCHAR(128) DEFAULT NULL COMMENT '短信 API 的密钥',
+    callback_url VARCHAR(255) DEFAULT NULL COMMENT '短信发送回调 URL',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+
+-- 短信模板表  
+CREATE TABLE system_sms_template (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '编号',
+    type TINYINT NOT NULL COMMENT '短信签名',
+    status TINYINT NOT NULL COMMENT '开启状态',
+    code VARCHAR(63) NOT NULL COMMENT '模板编码',
+    name VARCHAR(63) NOT NULL COMMENT '模板名称',
+    content VARCHAR(255) NOT NULL COMMENT '模板内容',
+    params VARCHAR(255) NOT NULL COMMENT '参数数组',
+    remark VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    api_template_id VARCHAR(63) NOT NULL COMMENT '短信 API 的模板编号',
+    channel_id BIGINT NOT NULL COMMENT '短信渠道编号',
+    channel_code VARCHAR(63) NOT NULL COMMENT '短信渠道编码',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除'
+);
+```
+
+### 短信发送服务
+```java
+@Service
+public class SmsSendServiceImpl implements SmsSendService {
+
+    @Resource
+    private SmsTemplateService smsTemplateService;
+    
+    @Resource
+    private SmsLogService smsLogService;
+    
+    @Resource
+    private SmsClientFactory smsClientFactory;
+
+    @Override
+    @Async
+    public Long sendSingleSms(String mobile, Long userId, Integer userType,
+                             String templateCode, Map<String, Object> templateParams) {
+        // 校验手机号码格式
+        if (!Validator.isMobile(mobile)) {
+            throw exception(SMS_SEND_MOBILE_NOT_VALID, mobile);
+        }
+        
+        // 获取短信模板
+        SmsTemplateDO template = smsTemplateService.getSmsTemplateByCodeFromCache(templateCode);
+        
+        // 创建发送日志
+        Long sendLogId = smsLogService.createSmsLog(mobile, userId, userType, 
+                                                   template, templateParams);
+        
+        try {
+            // 执行发送
+            SmsClient smsClient = smsClientFactory.getSmsClient(template.getChannelId());
+            SmsSendResult sendResult = smsClient.sendSms(mobile, template.getApiTemplateId(),
+                                                        templateParams);
+            
+            // 更新发送结果
+            smsLogService.updateSmsSendResult(sendLogId, sendResult);
+            
+        } catch (Exception e) {
+            log.error("[sendSingleSms][发送短信失败, mobile:{}, template:{}]", mobile, templateCode, e);
+            smsLogService.updateSmsSendResult(sendLogId, false, e.getMessage());
+            throw exception(SMS_SEND_ERROR);
+        }
+        
+        return sendLogId;
+    }
+
+    @Override
+    @Async
+    public void sendBatchSms(List<String> mobiles, String templateCode,
+                            Map<String, Object> templateParams) {
+        for (String mobile : mobiles) {
+            try {
+                sendSingleSms(mobile, null, null, templateCode, templateParams);
+            } catch (Exception e) {
+                log.error("[sendBatchSms][发送短信失败, mobile:{}, template:{}]", mobile, templateCode, e);
+            }
+        }
+    }
+
+    @Override
+    public void receiveSmsStatus(String channelCode, String text, HttpServletRequest request) 
+            throws Throwable {
+        // 获取短信客户端
+        SmsClient smsClient = smsClientFactory.getSmsClient(channelCode);
+        
+        // 解析回调数据
+        List<SmsReceiveRespDTO> receiveResults = smsClient.parseSmsReceiveStatus(text, request);
+        
+        // 更新发送状态
+        for (SmsReceiveRespDTO result : receiveResults) {
+            smsLogService.updateSmsReceiveResult(result.getLogId(), result);
+        }
+    }
+}
+```
+
+### 短信客户端抽象
+```java
+public interface SmsClient {
+
+    /**
+     * 获得渠道编号
+     */
+    String getChannelCode();
+
+    /**
+     * 发送短信
+     */
+    SmsSendRespDTO sendSms(String mobile, String templateId, 
+                          Map<String, Object> templateParams) throws Throwable;
+
+    /**
+     * 解析接收短信的结果
+     */
+    List<SmsReceiveRespDTO> parseSmsReceiveStatus(String text, 
+                                                 HttpServletRequest request) throws Throwable;
+}
+
+@Component
+public abstract class AbstractSmsClient implements SmsClient {
+
+    protected final SmsChannelProperties properties;
+    
+    public AbstractSmsClient(SmsChannelProperties properties) {
+        this.properties = properties;
+    }
+
+    /**
+     * 初始化
+     */
+    @PostConstruct
+    public final void init() {
+        doInit();
+        log.info("[init][配置({}) 初始化完成]", properties);
+    }
+
+    /**
+     * 自定义初始化
+     */
+    protected abstract void doInit();
+}
+```
+
+## 微信通知系统
+
+### 微信模板消息
+```java
+@Service
+public class WechatNotifyService {
+
+    @Resource
+    private WxMpService wxMpService;
+
+    /**
+     * 发送模板消息
+     */
+    public void sendTemplateMessage(String openId, String templateId,
+                                   Map<String, Object> data, String url) {
+        try {
+            WxMpTemplateMessage templateMessage = WxMpTemplateMessage.builder()
+                .toUser(openId)
+                .templateId(templateId)
+                .url(url)
+                .build();
+            
+            // 设置模板数据
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                templateMessage.addData(new WxMpTemplateData(
+                    entry.getKey(), 
+                    String.valueOf(entry.getValue()), 
+                    "#173177"
+                ));
+            }
+            
+            // 发送消息
+            wxMpService.getTemplateMsgService().sendTemplateMsg(templateMessage);
+            
+        } catch (Exception e) {
+            log.error("[sendTemplateMessage][发送微信模板消息失败, openId:{}, templateId:{}]", 
+                     openId, templateId, e);
+        }
+    }
+
+    /**
+     * 发送小程序订阅消息
+     */
+    public void sendSubscribeMessage(String openId, String templateId,
+                                    Map<String, Object> data, String page) {
+        try {
+            WxMaSubscribeMessage subscribeMessage = WxMaSubscribeMessage.builder()
+                .toUser(openId)
+                .templateId(templateId)
+                .page(page)
+                .build();
+            
+            // 设置数据
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                subscribeMessage.addData(new WxMaSubscribeData(
+                    entry.getKey(), 
+                    String.valueOf(entry.getValue())
+                ));
+            }
+            
+            // 发送消息
+            wxMaService.getMsgService().sendSubscribeMsg(subscribeMessage);
+            
+        } catch (Exception e) {
+            log.error("[sendSubscribeMessage][发送小程序订阅消息失败, openId:{}, templateId:{}]", 
+                     openId, templateId, e);
+        }
+    }
+}
+```
+
+## 系统公告
+
+### 公告管理
+```sql
+-- 通知公告表
+CREATE TABLE system_notice (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT '公告ID',
+    title VARCHAR(50) NOT NULL COMMENT '公告标题',
+    content TEXT NOT NULL COMMENT '公告内容',
+    type TINYINT NOT NULL COMMENT '公告类型',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '公告状态',
+    
+    creator VARCHAR(64) DEFAULT '' COMMENT '创建者',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updater VARCHAR(64) DEFAULT '' COMMENT '更新者',
+    update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted BIT NOT NULL DEFAULT 0 COMMENT '是否删除',
+    tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户编号'
+);
+```
+
+### 公告服务
+```java
+@Service
+public class NoticeServiceImpl implements NoticeService {
+
+    @Override
+    public Long createNotice(NoticeCreateReqVO reqVO) {
+        // 创建通知公告
+        NoticeDO notice = NoticeConvert.INSTANCE.convert(reqVO);
+        noticeMapper.insert(notice);
+        
+        // 推送给所有在线用户（可选）
+        if (Objects.equals(reqVO.getType(), NoticeTypeEnum.NOTICE.getType())) {
+            pushNoticeToAllUsers(notice);
+        }
+        
+        return notice.getId();
+    }
+
+    @Override
+    public void updateNotice(NoticeUpdateReqVO reqVO) {
+        // 校验公告存在
+        validateNoticeExists(reqVO.getId());
+        
+        // 更新公告
+        NoticeDO updateObj = NoticeConvert.INSTANCE.convert(reqVO);
+        noticeMapper.updateById(updateObj);
+    }
+
+    /**
+     * 推送公告给所有用户
+     */
+    private void pushNoticeToAllUsers(NoticeDO notice) {
+        // 获取所有在线用户
+        Set<Long> onlineUserIds = getOnlineUserIds();
+        
+        // 创建站内信
+        Map<String, Object> templateParams = new HashMap<>();
+        templateParams.put("title", notice.getTitle());
+        templateParams.put("content", notice.getContent());
+        
+        for (Long userId : onlineUserIds) {
+            try {
+                notifyMessageService.createNotifyMessage(userId, UserTypeEnum.ADMIN.getValue(),
+                    new NotifyTemplateReqDTO("SYSTEM_NOTICE", templateParams));
+            } catch (Exception e) {
+                log.error("[pushNoticeToAllUsers][推送公告失败, userId:{}, noticeId:{}]", 
+                         userId, notice.getId(), e);
+            }
+        }
+    }
+}
+```
+
+## 消息队列集成
+
+### 异步消息处理
+```java
+@Component
+public class NotificationProducer {
+
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
+
+    /**
+     * 发送站内信消息
+     */
+    public void sendNotifyMessage(NotifyMessageSendDTO sendDTO) {
+        redisTemplate.convertAndSend("notify.message.send", sendDTO);
+    }
+
+    /**
+     * 发送邮件消息
+     */
+    public void sendMailMessage(MailSendDTO sendDTO) {
+        redisTemplate.convertAndSend("mail.send", sendDTO);
+    }
+
+    /**
+     * 发送短信消息
+     */
+    public void sendSmsMessage(SmsSendDTO sendDTO) {
+        redisTemplate.convertAndSend("sms.send", sendDTO);
+    }
+}
+
+@Component
+public class NotificationConsumer {
+
+    @Resource
+    private NotifyMessageService notifyMessageService;
+    
+    @Resource
+    private MailSendService mailSendService;
+    
+    @Resource
+    private SmsSendService smsSendService;
+
+    @EventListener
+    public void onNotifyMessage(NotifyMessageSendDTO sendDTO) {
+        try {
+            notifyMessageService.createNotifyMessage(
+                sendDTO.getUserId(),
+                sendDTO.getUserType(),
+                sendDTO.getTemplateReq()
+            );
+        } catch (Exception e) {
+            log.error("[onNotifyMessage][处理站内信消息失败]", e);
+        }
+    }
+
+    @EventListener
+    public void onMailMessage(MailSendDTO sendDTO) {
+        try {
+            mailSendService.sendSingleMail(
+                sendDTO.getMail(),
+                sendDTO.getUserId(),
+                sendDTO.getUserType(),
+                sendDTO.getTemplateCode(),
+                sendDTO.getTemplateParams()
+            );
+        } catch (Exception e) {
+            log.error("[onMailMessage][处理邮件消息失败]", e);
+        }
+    }
+
+    @EventListener
+    public void onSmsMessage(SmsSendDTO sendDTO) {
+        try {
+            smsSendService.sendSingleSms(
+                sendDTO.getMobile(),
+                sendDTO.getUserId(),
+                sendDTO.getUserType(),
+                sendDTO.getTemplateCode(),
+                sendDTO.getTemplateParams()
+            );
+        } catch (Exception e) {
+            log.error("[onSmsMessage][处理短信消息失败]", e);
+        }
+    }
+}
+```
+
+## 通知统一发送
+
+### 通知发送门面
+```java
+@Service
+public class NotificationFacadeService {
+
+    @Resource
+    private NotifyMessageService notifyMessageService;
+    
+    @Resource
+    private MailSendService mailSendService;
+    
+    @Resource
+    private SmsSendService smsSendService;
+    
+    @Resource
+    private WechatNotifyService wechatNotifyService;
+    
+    @Resource
+    private NotificationProducer notificationProducer;
+
+    /**
+     * 发送通知（多渠道）
+     */
+    public void sendNotification(NotificationSendDTO sendDTO) {
+        // 站内信
+        if (sendDTO.getChannels().contains(NotifyChannelEnum.SITE_MESSAGE)) {
+            sendSiteMessage(sendDTO);
+        }
+        
+        // 邮件
+        if (sendDTO.getChannels().contains(NotifyChannelEnum.EMAIL)) {
+            sendEmail(sendDTO);
+        }
+        
+        // 短信
+        if (sendDTO.getChannels().contains(NotifyChannelEnum.SMS)) {
+            sendSms(sendDTO);
+        }
+        
+        // 微信
+        if (sendDTO.getChannels().contains(NotifyChannelEnum.WECHAT)) {
+            sendWechat(sendDTO);
+        }
+    }
+
+    /**
+     * 批量发送通知
+     */
+    @Async
+    public void sendBatchNotification(List<NotificationSendDTO> sendDTOs) {
+        for (NotificationSendDTO sendDTO : sendDTOs) {
+            try {
+                sendNotification(sendDTO);
+            } catch (Exception e) {
+                log.error("[sendBatchNotification][批量发送通知失败]", e);
+            }
+        }
+    }
+
+    private void sendSiteMessage(NotificationSendDTO sendDTO) {
+        NotifyMessageSendDTO messageDTO = new NotifyMessageSendDTO();
+        messageDTO.setUserId(sendDTO.getUserId());
+        messageDTO.setUserType(sendDTO.getUserType());
+        messageDTO.setTemplateReq(new NotifyTemplateReqDTO(
+            sendDTO.getTemplateCode(), 
+            sendDTO.getTemplateParams()
+        ));
+        
+        notificationProducer.sendNotifyMessage(messageDTO);
+    }
+
+    private void sendEmail(NotificationSendDTO sendDTO) {
+        if (StrUtil.isBlank(sendDTO.getEmail())) {
+            return;
+        }
+        
+        MailSendDTO mailDTO = new MailSendDTO();
+        mailDTO.setMail(sendDTO.getEmail());
+        mailDTO.setUserId(sendDTO.getUserId());
+        mailDTO.setUserType(sendDTO.getUserType());
+        mailDTO.setTemplateCode(sendDTO.getTemplateCode());
+        mailDTO.setTemplateParams(sendDTO.getTemplateParams());
+        
+        notificationProducer.sendMailMessage(mailDTO);
+    }
+
+    private void sendSms(NotificationSendDTO sendDTO) {
+        if (StrUtil.isBlank(sendDTO.getMobile())) {
+            return;
+        }
+        
+        SmsSendDTO smsDTO = new SmsSendDTO();
+        smsDTO.setMobile(sendDTO.getMobile());
+        smsDTO.setUserId(sendDTO.getUserId());
+        smsDTO.setUserType(sendDTO.getUserType());
+        smsDTO.setTemplateCode(sendDTO.getTemplateCode());
+        smsDTO.setTemplateParams(sendDTO.getTemplateParams());
+        
+        notificationProducer.sendSmsMessage(smsDTO);
+    }
+}
+```
+
+## 最佳实践
+
+### 性能优化
+1. **异步发送**: 使用消息队列异步处理通知
+2. **批量发送**: 支持批量发送减少系统开销
+3. **失败重试**: 实现发送失败的重试机制
+4. **流量控制**: 设置发送频率限制防止滥用
+
+### 用户体验
+1. **消息分类**: 不同类型消息使用不同模板
+2. **个性化**: 支持用户自定义通知偏好设置
+3. **及时性**: 重要消息实时推送
+4. **历史记录**: 保留通知历史方便用户查看
+
+### 监控告警
+1. **发送成功率**: 监控各渠道发送成功率
+2. **延迟监控**: 监控消息发送延迟
+3. **失败分析**: 分析发送失败原因
+4. **用量统计**: 统计各类型消息发送量
