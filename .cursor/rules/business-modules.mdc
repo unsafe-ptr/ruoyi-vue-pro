@@ -1,0 +1,73 @@
+# 业务模块指南
+
+## 系统核心模块
+
+### system 模块 - 系统管理
+**路径**: [yudao-module-system](mdc:yudao-module-system)
+**功能**: 用户管理、角色权限、菜单管理、部门岗位、字典配置、操作日志等
+**核心包**: `cn.iocoder.yudao.module.system`
+
+### infra 模块 - 基础设施
+**路径**: [yudao-module-infra](mdc:yudao-module-infra)
+**功能**: 文件存储、配置管理、代码生成、定时任务、API 文档等
+**核心包**: `cn.iocoder.yudao.module.infra`
+
+## 可选业务模块
+
+### bpm 模块 - 工作流程
+**路径**: [yudao-module-bpm](mdc:yudao-module-bpm)
+**技术栈**: Flowable 6.8.0
+**功能**: 流程设计器、流程实例、任务管理、表单设计
+**特色**: 支持 BPMN 和仿钉钉双设计器
+
+### pay 模块 - 支付系统
+**路径**: [yudao-module-pay](mdc:yudao-module-pay)
+**功能**: 支付应用、支付订单、退款管理、支付渠道配置
+**支持**: 支付宝、微信支付、银联等主流支付方式
+
+### mall 模块 - 商城系统
+**路径**: [yudao-module-mall](mdc:yudao-module-mall)
+**子模块**:
+- `yudao-module-product`: 商品管理
+- `yudao-module-promotion`: 营销活动
+- `yudao-module-trade`: 交易订单
+- `yudao-module-statistics`: 数据统计
+
+### member 模块 - 会员中心
+**路径**: [yudao-module-member](mdc:yudao-module-member)
+**功能**: 会员管理、等级体系、积分签到、标签分组
+
+### crm 模块 - 客户关系管理
+**路径**: [yudao-module-crm](mdc:yudao-module-crm)
+**功能**: 线索管理、客户管理、联系人、商机、合同、回款
+
+### erp 模块 - 企业资源计划
+**路径**: [yudao-module-erp](mdc:yudao-module-erp)
+**功能**: 产品管理、库存管理、采购管理、销售管理、财务管理
+
+### mp 模块 - 微信公众号
+**路径**: [yudao-module-mp](mdc:yudao-module-mp)
+**功能**: 账号管理、粉丝管理、消息管理、自动回复、菜单管理
+
+### ai 模块 - AI 大模型
+**路径**: [yudao-module-ai](mdc:yudao-module-ai)
+**功能**: 对话聊天、图片生成、音乐生成、思维导图
+**支持**: OpenAI、文心一言、通义千问等主流模型
+
+### iot 模块 - 物联网
+**路径**: [yudao-module-iot](mdc:yudao-module-iot)
+**功能**: 设备管理、数据采集、远程控制
+**插件化**: 支持 MQTT、HTTP 等多种协议
+
+### report 模块 - 数据报表
+**路径**: [yudao-module-report](mdc:yudao-module-report)
+**功能**: 报表设计器、大屏设计器、数据可视化
+
+## 模块间依赖关系
+- **基础依赖**: system <- 所有业务模块
+- **支付依赖**: pay <- mall (商城依赖支付)
+- **会员依赖**: member <- mall (商城依赖会员)
+- **工作流**: bpm 可被任意模块集成
+
+## 模块配置激活
+在 [pom.xml](mdc:pom.xml) 中控制模块的启用/禁用，根据业务需求按需集成。

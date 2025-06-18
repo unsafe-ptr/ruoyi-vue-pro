@@ -1,0 +1,189 @@
+# 常用开发模式指南
+
+## Controller 层开发模式
+
+### 标准 REST API 模式
+```java
+@RestController
+@RequestMapping("/admin-api/system/user")
+@Validated
+@Api(tags = "管理后台 - 用户")
+public class UserController {
+    
+    @PostMapping("/create")
+    @ApiOperation("创建用户")
+    @PreAuthorize("@ss.hasPermission('system:user:create')")
+    public CommonResult<Long> createUser(@Valid @RequestBody UserCreateReqVO reqVO) {
+        return success(userService.createUser(reqVO));
+    }
+}
+```
+
+### 分页查询模式
+```java
+@GetMapping("/page")
+@ApiOperation("获得用户分页")
+@PreAuthorize("@ss.hasPermission('system:user:query')")
+public CommonResult<PageResult<UserRespVO>> getUserPage(@Valid UserPageReqVO reqVO) {
+    PageResult<UserDO> pageResult = userService.getUserPage(reqVO);
+    return success(UserConvert.INSTANCE.convertPage(pageResult));
+}
+```
+
+## Service 层开发模式
+
+### 事务处理模式
+```java
+@Service
+@Validated
+public class UserServiceImpl implements UserService {
+    
+    @Transactional(rollbackFor = Exception.class)
+    public Long createUser(UserCreateReqVO reqVO) {
+        // 校验用户存在
+        validateUserExists(reqVO.getUsername());
+        // 插入用户
+        UserDO user = UserConvert.INSTANCE.convert(reqVO);
+        userMapper.insert(user);
+        return user.getId();
+    }
+}
+```
+
+## 数据访问层模式
+
+### MyBatis Plus 使用
+```java
+@Mapper
+public interface UserMapper extends BaseMapperX<UserDO> {
+    
+    default PageResult<UserDO> selectPage(UserPageReqVO reqVO) {
+        return selectPage(reqVO, new LambdaQueryWrapperX<UserDO>()
+                .likeIfPresent(UserDO::getUsername, reqVO.getUsername())
+                .eqIfPresent(UserDO::getStatus, reqVO.getStatus())
+                .betweenIfPresent(UserDO::getCreateTime, reqVO.getCreateTime())
+                .orderByDesc(UserDO::getId));
+    }
+}
+```
+
+## 权限控制模式
+
+### 菜单权限
+```java
+@PreAuthorize("@ss.hasPermission('system:user:query')")
+```
+
+### 数据权限
+```java
+@DataPermission(deptAlias = "d", userAlias = "u")
+```
+
+### 多租户
+```java
+@TenantIgnore // 忽略多租户
+@TenantInfo  // 获取租户信息
+```
+
+## 异常处理模式
+
+### 业务异常
+```java
+// 抛出业务异常
+throw exception(USER_NOT_EXISTS);
+
+// 在 ErrorCodeConstants 中定义
+ErrorCode USER_NOT_EXISTS = new ErrorCode(1002001001, "用户不存在");
+```
+
+### 全局异常处理
+框架自动处理，返回统一格式的错误响应。
+
+## 对象转换模式
+
+### MapStruct 转换器
+```java
+@Mapper
+public interface UserConvert {
+    UserConvert INSTANCE = Mappers.getMapper(UserConvert.class);
+    
+    UserDO convert(UserCreateReqVO bean);
+    UserRespVO convert(UserDO bean);
+    PageResult<UserRespVO> convertPage(PageResult<UserDO> page);
+}
+```
+
+## 枚举使用模式
+
+### 通用枚举
+```java
+@AllArgsConstructor
+@Getter
+public enum CommonStatusEnum implements IntArrayValuable {
+    ENABLE(0, "开启"),
+    DISABLE(1, "关闭");
+    
+    private final Integer status;
+    private final String name;
+}
+```
+
+## 配置管理模式
+
+### 配置类定义
+```java
+@ConfigurationProperties(prefix = "yudao.security")
+@Data
+public class SecurityProperties {
+    private Set<String> permitAllUrls = new HashSet<>();
+}
+```
+
+## 缓存使用模式
+
+### Redis 缓存
+```java
+@Cacheable(value = RedisKeyConstants.USER, key = "#id")
+public UserDO getUser(Long id) {
+    return userMapper.selectById(id);
+}
+```
+
+## 消息队列模式
+
+### 发送消息
+```java
+@Resource
+private RedisTemplate<String, Object> redisTemplate;
+
+// 发送消息
+redisTemplate.convertAndSend("user.create", userId);
+```
+
+## 单元测试模式
+
+### 服务层测试
+```java
+@ExtendWith(MockitoExtension.class)
+class UserServiceImplTest {
+    
+    @InjectMocks
+    private UserServiceImpl userService;
+    
+    @Mock
+    private UserMapper userMapper;
+    
+    @Test
+    void testCreateUser() {
+        // given
+        UserCreateReqVO reqVO = randomPojo(UserCreateReqVO.class);
+        
+        // when
+        Long userId = userService.createUser(reqVO);
+        
+        // then
+        assertNotNull(userId);
+        verify(userMapper).insert(any());
+    }
+}
+```

@@ -1,0 +1,50 @@
+# 模块结构指南
+
+## 核心模块详解
+
+### 基础框架模块
+- **yudao-common**：通用工具类和基础组件
+- **yudao-framework**：Spring Boot 自动配置和扩展
+- **yudao-dependencies**：统一依赖版本管理
+
+### 系统核心模块
+- **yudao-module-system**：系统管理功能（用户、角色、菜单、部门等）
+- **yudao-module-infra**：基础设施功能（文件、配置、代码生成等）
+
+### 业务扩展模块（可选）
+- **yudao-module-bpm**：工作流程管理，基于 Flowable
+- **yudao-module-pay**：支付系统，支持多渠道支付
+- **yudao-module-member**：会员中心管理
+- **yudao-module-mall**：商城系统功能
+- **yudao-module-crm**：客户关系管理
+- **yudao-module-erp**：企业资源计划
+- **yudao-module-mp**：微信公众号管理
+- **yudao-module-report**：报表和大屏功能
+- **yudao-module-ai**：AI 大模型集成
+- **yudao-module-iot**：物联网设备管理
+
+## 模块激活配置
+在 [pom.xml](mdc:pom.xml) 中通过注释/取消注释来控制模块的激活：
+```xml
+<!-- 默认激活的核心模块 -->
+<module>yudao-module-system</module>
+<module>yudao-module-infra</module>
+
+<!-- 可选业务模块（注释表示未激活）-->
+<!--<module>yudao-module-member</module>-->
+<!--<module>yudao-module-bpm</module>-->
+```
+
+## 前端对应项目
+- **Vue3 + element-plus**：现代化管理后台
+- **Vue3 + vben(ant-design-vue)**：企业级管理后台
+- **Vue2 + element-ui**：经典版管理后台
+- **uni-app**：移动端和小程序支持
+
+## 数据库支持
+项目支持多种数据库，脚本位于 [sql/](mdc:sql/) 目录：
+- MySQL（推荐）
+- PostgreSQL
+- Oracle
+- SQL Server
+- 国产数据库（达梦、人大金仓等）

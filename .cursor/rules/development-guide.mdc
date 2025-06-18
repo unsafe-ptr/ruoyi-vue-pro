@@ -1,0 +1,82 @@
+# 开发规范指南
+
+## 代码规范
+遵循《阿里巴巴 Java 开发手册》规范，代码注释详细。
+
+## 新增业务模块步骤
+
+### 1. 创建模块目录
+```
+yudao-module-{模块名}/
+├── pom.xml
+└── src/main/java/cn/iocoder/yudao/module/{模块名}/
+```
+
+### 2. 标准包结构
+```java
+cn.iocoder.yudao.module.{模块名}
+├── api/
+│   ├── {功能}Api.java           // 对外接口定义
+│   └── {功能}ApiImpl.java       // 接口实现
+├── controller/
+│   └── admin/                   // 管理后台控制器
+│       └── {功能}Controller.java
+├── service/
+│   ├── {功能}Service.java       // 业务接口
+│   └── {功能}ServiceImpl.java   // 业务实现
+├── dal/
+│   ├── dataobject/             // 数据对象
+│   │   └── {功能}DO.java
+│   └── mysql/                  // MySQL 实现
+│       └── {功能}Mapper.java
+├── convert/
+│   └── {功能}Convert.java       // 对象转换
+├── enums/
+│   └── {功能}Enum.java         // 枚举定义
+└── framework/
+    └── {模块}Configuration.java // 配置类
+```
+
+### 3. 核心注解和工具类使用
+
+#### 权限控制
+```java
+@PreAuthorize("@ss.hasPermission('system:user:query')")
+```
+
+#### 数据权限
+```java
+@DataPermission(deptAlias = "d")
+```
+
+#### 多租户
+```java
+@TenantIgnore // 忽略多租户
+```
+
+#### 操作日志
+```java
+@OperateLog(type = CREATE)
+```
+
+### 4. API 设计规范
+- 使用 RESTful 风格
+- 统一返回 `CommonResult<T>` 格式
+- 使用 `@Valid` 进行参数校验
+- 使用 `@ApiOperation` 添加接口文档
+
+### 5. 数据库设计规范
+- 表名使用模块前缀：`{模块名}_{表名}`
+- 必备字段：`id`, `create_time`, `update_time`, `creator`, `updater`, `deleted`, `tenant_id`
+- 使用 MyBatis Plus 的 `BaseEntity` 基类
+
+## 代码生成器使用
+1. 访问管理后台的代码生成功能
+2. 导入数据库表
+3. 配置生成选项
+4. 一键生成前后端代码
+
+## 测试规范
+- 单元测试使用 JUnit 5 + Mockito
+- 集成测试继承 `BaseDbUnitTest`
+- 测试配置文件：[application-unit-test.yaml](mdc:yudao-module-system/src/test/resources/application-unit-test.yaml)

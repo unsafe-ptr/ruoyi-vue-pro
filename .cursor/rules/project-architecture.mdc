@@ -1,0 +1,45 @@
+# 芋道管理系统项目架构指南
+
+## 项目概述
+这是一个基于 Spring Boot 2.7.18 + Vue3 的企业级快速开发平台，采用多模块架构设计。
+
+## 核心架构
+
+### 主要入口点
+- 应用启动类：[YudaoServerApplication.java](mdc:yudao-server/src/main/java/cn/iocoder/yudao/server/YudaoServerApplication.java)
+- 根 Maven 配置：[pom.xml](mdc:pom.xml)
+
+### 核心模块结构
+- **yudao-dependencies**：Maven 依赖版本管理
+- **yudao-framework**：Java 框架拓展和通用组件
+- **yudao-server**：主服务器，整合所有模块
+- **各业务模块**：按业务领域拆分的独立模块
+
+### 技术栈
+- **后端框架**：Spring Boot 2.7.18 + Spring Security + MyBatis Plus
+- **数据库**：MySQL + Redis + 支持多种国产数据库
+- **工作流**：Flowable 6.8.0
+- **API 文档**：Springdoc + Swagger
+- **监控**：Spring Boot Admin + SkyWalking
+
+### 包结构规范
+```
+cn.iocoder.yudao.module.{模块名}
+├── api/          # 对外接口定义
+├── controller/   # REST 控制器
+├── service/      # 业务逻辑层
+├── dal/          # 数据访问层
+├── convert/      # 对象转换器
+├── enums/        # 枚举定义
+└── framework/    # 模块框架配置
+```
+
+### 配置文件
+- 主配置：[application.yaml](mdc:yudao-server/src/main/resources/application.yaml)
+- 数据库脚本：[sql/mysql/](mdc:sql/mysql/)
+
+## 关键设计模式
+- **多模块架构**：业务功能按模块独立开发和部署
+- **统一响应格式**：所有 API 使用统一的响应结构
+- **分层架构**：Controller -> Service -> DAO 的经典三层架构
+- **权限控制**：基于 RBAC 的细粒度权限管理
