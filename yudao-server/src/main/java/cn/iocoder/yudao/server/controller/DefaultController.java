@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.security.PermitAll;
 import javax.servlet.http.HttpServletRequest;
+import java.util.HashMap;
+import java.util.Map;
 
 import static cn.iocoder.yudao.framework.common.exception.enums.GlobalErrorCodeConstants.NOT_IMPLEMENTED;
 
@@ -78,17 +80,21 @@ public class DefaultController {
     }
 
     /**
-     * 测试接口：打印 query、header、body
+     * 测试接口：仅用于系统健康检查
+     * 注意：生产环境建议完全移除此接口或加强权限控制
      */
     @RequestMapping(value = { "/test" })
     @PermitAll
     public CommonResult<Boolean> test(HttpServletRequest request) {
-        // 打印查询参数
-        log.info("Query: {}", ServletUtils.getParamMap(request));
-        // 打印请求头
-        log.info("Header: {}", ServletUtils.getHeaderMap(request));
-        // 打印请求体
-        log.info("Body: {}", ServletUtils.getBody(request));
+        // 安全改进：不再记录敏感的请求信息，只返回基本状态
+        String clientIp = ServletUtils.getClientIP(request);
+        log.info("Health check request from IP: {}", clientIp);
+        
+        // 限制响应信息，避免暴露系统内部结构
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "ok");
+        response.put("timestamp", System.currentTimeMillis());
+        
         return CommonResult.success(true);
     }
 

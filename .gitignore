@@ -50,5 +50,12 @@ rebel.xml
 
 application-my.yaml
 
+# Environment files with sensitive configuration
+.env
+.env.local
+.env.production
+.env.development
+*.env
+
 /yudao-ui-app/unpackage/
 **/.DS_Store

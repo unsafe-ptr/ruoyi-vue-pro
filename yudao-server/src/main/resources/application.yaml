@@ -78,7 +78,7 @@ mybatis-plus:
     banner: false # 关闭控制台的 Banner 打印
   type-aliases-package: ${yudao.info.base-package}.module.*.dal.dataobject
   encryptor:
-    password: XDV71a+xqStEA3WH # 加解密的秘钥，可使用 https://www.imaegoo.com/2020/aes-key-generator/ 网站生成
+    password: ${MYBATIS_ENCRYPT_PASSWORD:XDV71a+xqStEA3WH} # 加解密的秘钥，建议生产环境使用环境变量
 
 mybatis-plus-join:
   banner: false # 是否打印 mybatis plus join banner，默认true
@@ -165,13 +165,13 @@ spring:
           host: 127.0.0.1
           port: 19530
     qianfan: # 文心一言
-      api-key: x0cuLZ7XsaTCU08vuJWO87Lg
-      secret-key: R9mYF9dl9KASgi5RUq0FQt3wRisSnOcK
+      api-key: ${QIANFAN_API_KEY:}
+      secret-key: ${QIANFAN_SECRET_KEY:}
     zhipuai: # 智谱 AI
-      api-key: 32f84543e54eee31f8d56b2bd6020573.3vh9idLJZ2ZhxDEs
+      api-key: ${ZHIPUAI_API_KEY:}
     openai: # OpenAI 官方
-      api-key: sk-aN6nWn3fILjrgLFT0fC4Aa60B72e4253826c77B29dC94f17
-      base-url: https://api.gptsapi.net
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     azure: # OpenAI 微软
       openai:
         endpoint: https://eastusprejade.openai.azure.com
@@ -181,9 +181,9 @@ spring:
       chat:
         model: llama3
     stabilityai:
-      api-key: sk-e53UqbboF8QJCscYvzJscJxJXoFcFg4iJjl1oqgE7baJETmx
+      api-key: ${STABILITYAI_API_KEY:}
     dashscope: # 通义千问
-      api-key: sk-71800982914041848008480000000000
+      api-key: ${DASHSCOPE_API_KEY:}
     minimax: # Minimax：https://www.minimaxi.com/
       api-key: xxxx
     moonshot: # 月之暗灭（KIMI）
@@ -192,12 +192,12 @@ spring:
 yudao:
   ai:
     deep-seek: # DeepSeek
-      enable: true
-      api-key: sk-e94db327cc7d457d99a8de8810fc6b12
+      enable: ${DEEPSEEK_ENABLE:false}
+      api-key: ${DEEPSEEK_API_KEY:}
       model: deepseek-chat
     doubao: # 字节豆包
-      enable: true
-      api-key: 5c1b5747-26d2-4ebd-a4e0-dd0e8d8b4272
+      enable: ${DOUBAO_ENABLE:false}
+      api-key: ${DOUBAO_API_KEY:}
       model: doubao-1-5-lite-32k-250115
     hunyuan: # 腾讯混元
       enable: true
@@ -208,9 +208,9 @@ yudao:
       api-key: sk-epsakfenqnyzoxhmbucsxlhkdqlcbnimslqoivkshalvdozz
       model: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
     xinghuo: # 讯飞星火
-      enable: true
-      appKey: 75b161ed2aef4719b275d6e7f2a4d4cd
-      secretKey: YWYxYWI2MTA4ODI2NGZlYTQyNjAzZTcz
+      enable: ${XINGHUO_ENABLE:false}
+      appKey: ${XINGHUO_APP_KEY:}
+      secretKey: ${XINGHUO_SECRET_KEY:}
       model: generalv3.5
     baichuan: # 百川智能
       enable: true
