@@ -96,6 +96,9 @@ public class CrmContractServiceImpl implements CrmContractService {
     @Resource
     private BpmProcessInstanceApi bpmProcessInstanceApi;
 
+    @Resource
+    private CrmCommonService crmCommonService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     @LogRecord(type = CRM_CONTRACT_TYPE, subType = CRM_CONTRACT_CREATE_SUB_TYPE, bizNo = "{{#contract.id}}",
@@ -410,6 +413,13 @@ public class CrmContractServiceImpl implements CrmContractService {
     @Override
     public List<CrmContractDO> getContractListByCustomerIdOwnerUserId(Long customerId, Long ownerUserId) {
         return contractMapper.selectListByCustomerIdOwnerUserId(customerId, ownerUserId);
+    }
+
+    @Override
+    public void handleContractBusiness() {
+        // 使用通用服务处理业务逻辑
+        crmCommonService.handleContractCommon();
+        // 处理合同特有的业务逻辑
     }
 
 }

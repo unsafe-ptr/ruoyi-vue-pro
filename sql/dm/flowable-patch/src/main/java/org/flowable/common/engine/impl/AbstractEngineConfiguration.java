@@ -1093,13 +1093,17 @@ public abstract class AbstractEngineConfiguration {
     }
 
     public void close() {
-        if (forceCloseMybatisConnectionPool && dataSource instanceof PooledDataSource) {
-            /*
-             * When the datasource is created by a Flowable engine (i.e. it's an instance of PooledDataSource),
-             * the connection pool needs to be closed when closing the engine.
-             * Note that calling forceCloseAll() multiple times (as is the case when running with multiple engine) is ok.
-             */
-            ((PooledDataSource) dataSource).forceCloseAll();
+        try {
+            // 关闭连接池
+            if (dataSource instanceof PooledDataSource) {
+                ((PooledDataSource) dataSource).forceCloseAll();
+            }
+            // 关闭其他资源
+            if (sqlSessionFactory != null) {
+                sqlSessionFactory.getConfiguration().getEnvironment().getDataSource().getConnection().close();
+            }
+        } catch (Exception e) {
+            logger.error("Error closing resources", e);
         }
     }
 
