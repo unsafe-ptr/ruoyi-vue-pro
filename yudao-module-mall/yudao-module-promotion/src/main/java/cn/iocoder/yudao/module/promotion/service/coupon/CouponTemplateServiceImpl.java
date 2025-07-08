@@ -23,6 +23,7 @@ import java.util.Objects;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.module.promotion.enums.ErrorCodeConstants.COUPON_TEMPLATE_NOT_EXISTS;
+import static cn.iocoder.yudao.module.promotion.enums.ErrorCodeConstants.COUPON_TEMPLATE_NOT_ENOUGH;
 import static cn.iocoder.yudao.module.promotion.enums.ErrorCodeConstants.COUPON_TEMPLATE_TOTAL_COUNT_TOO_SMALL;
 
 /**
@@ -116,7 +117,11 @@ public class CouponTemplateServiceImpl implements CouponTemplateService {
 
     @Override
     public void updateCouponTemplateTakeCount(Long id, int incrCount) {
-        couponTemplateMapper.updateTakeCount(id, incrCount);
+        int updateCount = couponTemplateMapper.updateTakeCount(id, incrCount);
+        // 只在增加数量且更新失败时，说明库存不足，抛出异常
+        if (incrCount > 0 && updateCount == 0) {
+            throw exception(COUPON_TEMPLATE_NOT_ENOUGH);
+        }
     }
 
     @Override

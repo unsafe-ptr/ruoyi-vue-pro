@@ -40,10 +40,18 @@ public interface CouponTemplateMapper extends BaseMapperX<CouponTemplateDO> {
                 .orderByDesc(CouponTemplateDO::getId));
     }
 
-    default void updateTakeCount(Long id, Integer incrCount) {
-        update(null, new LambdaUpdateWrapper<CouponTemplateDO>()
-                .eq(CouponTemplateDO::getId, id)
-                .setSql("take_count = take_count + " + incrCount));
+    default int updateTakeCount(Long id, Integer incrCount) {
+        LambdaUpdateWrapper<CouponTemplateDO> wrapper = new LambdaUpdateWrapper<CouponTemplateDO>()
+                .eq(CouponTemplateDO::getId, id);
+        
+        // 只在增加数量时检查库存（incrCount > 0）
+        if (incrCount > 0) {
+            // 添加库存判断：剩余数量 >= 领取的数量，或者总数量为-1（无限库存）
+            wrapper.and(w -> w.apply("total_count = -1 OR (total_count - take_count) >= {0}", incrCount));
+        }
+        
+        wrapper.setSql("take_count = take_count + " + incrCount);
+        return update(null, wrapper);
     }
 
     default List<CouponTemplateDO> selectListByTakeType(Integer takeType) {

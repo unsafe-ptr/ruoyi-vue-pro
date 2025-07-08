@@ -279,12 +279,8 @@ public class CouponServiceImpl implements CouponService {
         if (ObjUtil.notEqual(couponTemplate.getTakeType(), takeType.getType())) {
             throw exception(COUPON_TEMPLATE_CANNOT_TAKE);
         }
-        // 校验发放数量不能过小（仅在 CouponTakeTypeEnum.USER 用户领取时）
-        if (CouponTakeTypeEnum.isUser(couponTemplate.getTakeType())
-                && ObjUtil.notEqual(couponTemplate.getTakeLimitCount(), CouponTemplateDO.TIME_LIMIT_COUNT_MAX) // 非不限制
-                && couponTemplate.getTakeCount() + userIds.size() > couponTemplate.getTotalCount()) {
-            throw exception(COUPON_TEMPLATE_NOT_ENOUGH);
-        }
+        // 注意：库存检查现在在数据库层面的 updateCouponTemplateTakeCount 方法中进行
+        // 如果库存不足，该方法会抛出 COUPON_TEMPLATE_NOT_ENOUGH 异常
         // 校验"固定日期"的有效期类型是否过期
         if (CouponTemplateValidityTypeEnum.DATE.getType().equals(couponTemplate.getValidityType())) {
             if (LocalDateTimeUtils.beforeNow(couponTemplate.getValidEndTime())) {
