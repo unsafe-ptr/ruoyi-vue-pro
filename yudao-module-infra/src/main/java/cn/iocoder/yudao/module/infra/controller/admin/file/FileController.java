@@ -8,7 +8,6 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.tenant.core.aop.TenantIgnore;
 import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.*;
-import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.validator.ValidDirectoryParam;
 import cn.iocoder.yudao.module.infra.dal.dataobject.file.FileDO;
 import cn.iocoder.yudao.module.infra.service.file.FileService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -59,7 +58,7 @@ public class FileController {
     })
     public CommonResult<FilePresignedUrlRespVO> getFilePresignedUrl(
             @RequestParam("name") String name,
-            @ValidDirectoryParam @RequestParam(value = "directory", required = false) String directory) {
+            @RequestParam(value = "directory", required = false) String directory) {
         return success(fileService.getFilePresignedUrl(name, directory));
     }
 
