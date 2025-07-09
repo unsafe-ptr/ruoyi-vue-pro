@@ -15,6 +15,7 @@ import cn.iocoder.yudao.module.infra.dal.mysql.file.FileMapper;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.FileClient;
 import cn.iocoder.yudao.module.infra.framework.file.core.client.s3.FilePresignedUrlRespDTO;
 import cn.iocoder.yudao.module.infra.framework.file.core.utils.FileTypeUtils;
+import cn.iocoder.yudao.module.infra.framework.file.core.utils.PathValidationUtils;
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Resource;
 import lombok.SneakyThrows;
@@ -94,7 +95,10 @@ public class FileServiceImpl implements FileService {
 
     @VisibleForTesting
     String generateUploadPath(String name, String directory) {
-        // 1. 生成前缀、后缀
+        // 1. 验证并清理目录路径，防止路径遍历攻击
+        directory = PathValidationUtils.validateAndCleanDirectory(directory);
+        
+        // 2. 生成前缀、后缀
         String prefix = null;
         if (PATH_PREFIX_DATE_ENABLE) {
             prefix = LocalDateTimeUtil.format(LocalDateTimeUtil.now(), PURE_DATE_PATTERN);
@@ -104,7 +108,7 @@ public class FileServiceImpl implements FileService {
             suffix = String.valueOf(System.currentTimeMillis());
         }
 
-        // 2.1 先拼接 suffix 后缀
+        // 3.1 先拼接 suffix 后缀
         if (StrUtil.isNotEmpty(suffix)) {
             String ext = FileUtil.extName(name);
             if (StrUtil.isNotEmpty(ext)) {
@@ -113,11 +117,11 @@ public class FileServiceImpl implements FileService {
                 name = name + StrUtil.C_UNDERLINE + suffix;
             }
         }
-        // 2.2 再拼接 prefix 前缀
+        // 3.2 再拼接 prefix 前缀
         if (StrUtil.isNotEmpty(prefix)) {
             name = prefix + StrUtil.SLASH + name;
         }
-        // 2.3 最后拼接 directory 目录
+        // 3.3 最后拼接 directory 目录
         if (StrUtil.isNotEmpty(directory)) {
             name = directory + StrUtil.SLASH + name;
         }
@@ -127,10 +131,13 @@ public class FileServiceImpl implements FileService {
     @Override
     @SneakyThrows
     public FilePresignedUrlRespVO getFilePresignedUrl(String name, String directory) {
-        // 1. 生成上传的 path，需要保证唯一
+        // 1. 验证并清理目录路径，防止路径遍历攻击
+        directory = PathValidationUtils.validateAndCleanDirectory(directory);
+        
+        // 2. 生成上传的 path，需要保证唯一
         String path = generateUploadPath(name, directory);
 
-        // 2. 获取文件预签名地址
+        // 3. 获取文件预签名地址
         FileClient fileClient = fileConfigService.getMasterFileClient();
         FilePresignedUrlRespDTO presignedObjectUrl = fileClient.getPresignedObjectUrl(path);
         return BeanUtils.toBean(presignedObjectUrl, FilePresignedUrlRespVO.class,
