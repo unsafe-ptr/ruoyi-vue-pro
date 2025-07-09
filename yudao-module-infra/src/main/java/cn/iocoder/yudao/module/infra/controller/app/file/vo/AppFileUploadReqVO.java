@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.infra.controller.app.file.vo;
 
+import cn.iocoder.yudao.module.infra.controller.admin.file.vo.file.validator.ValidDirectory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -14,6 +15,7 @@ public class AppFileUploadReqVO {
     private MultipartFile file;
 
     @Schema(description = "文件目录", example = "XXX/YYY")
+    @ValidDirectory(message = "目录路径无效，包含非法字符")
     private String directory;
 
 }
