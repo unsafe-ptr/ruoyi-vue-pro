@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERRORpackage cn.iocoder.yudao.module.infra.controller.app.file;
+package cn.iocoder.yudao.module.infra.controller.app.file;
 
 import cn.hutool.core.io.IoUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
@@ -49,7 +49,7 @@ public class AppFileController {
     })
     public CommonResult<FilePresignedUrlRespVO> getFilePresignedUrl(
             @RequestParam("name") String name,
-            @RequestParam(value = "directory", required = false) String directory) {
+            @ValidDirectoryParam @RequestParam(value = "directory", required = false) String directory) {
         return success(fileService.getFilePresignedUrl(name, directory));
     }
 
