@@ -62,6 +62,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import javax.annotation.Resource;
 import javax.validation.Valid;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
@@ -173,7 +174,7 @@ public class BpmTaskServiceImpl implements BpmTaskService {
     }
 
     /**
-     * 获得用户指定 taskId 任务编号的“待办”（未审批、且可审核）的任务
+     * 获得用户指定 taskId 任务编号的"待办"（未审批、且可审核）的任务
      *
      * @param userId 用户编号
      * @param taskId 任务编号
@@ -194,7 +195,7 @@ public class BpmTaskServiceImpl implements BpmTaskService {
     }
 
     /**
-     * 获得用户指定 processInstanceId 流程编号下的首个“待办”（未审批、且可审核）的任务
+     * 获得用户指定 processInstanceId 流程编号下的首个"待办"（未审批、且可审核）的任务
      *
      * @param userId 用户编号
      * @param processInstanceId 流程编号
@@ -241,7 +242,7 @@ public class BpmTaskServiceImpl implements BpmTaskService {
         }
         List<HistoricTaskInstance> tasks = taskQuery.listPage(PageUtils.getStart(pageVO), pageVO.getPageSize());
 
-        // 特殊：强制移除自动完成的“发起人”节点
+        // 特殊：强制移除自动完成的"发起人"节点
         // 补充说明：由于 taskQuery 无法方面的过滤，所以暂时通过内存过滤
         tasks.removeIf(task -> task.getTaskDefinitionKey().equals(START_USER_NODE_ID));
         return new PageResult<>(tasks, count);
@@ -297,7 +298,7 @@ public class BpmTaskServiceImpl implements BpmTaskService {
     public Task validateTask(Long userId, String taskId) {
         Task task = validateTaskExist(taskId);
         // 为什么判断 assignee 非空的情况下？
-        // 例如说：在审批人为空时，我们会有“自动审批通过”的策略，此时 userId 为 null，允许通过
+        // 例如说：在审批人为空时，我们会有"自动审批通过"的策略，此时 userId 为 null，允许通过
         if (StrUtil.isNotBlank(task.getAssignee())
                 && ObjectUtil.notEqual(userId, NumberUtils.parseLong(task.getAssignee()))) {
             throw exception(TASK_OPERATE_FAIL_ASSIGN_NOT_SELF);
@@ -404,19 +405,28 @@ public class BpmTaskServiceImpl implements BpmTaskService {
      * @return 所有子任务列表
      */
     private List<Task> getAllChildTaskList(Task parentTask) {
+        // 1. 获取流程实例的所有任务
+        List<Task> allTasks = taskService.createTaskQuery().processInstanceId(parentTask.getProcessInstanceId()).list();
+        if (CollUtil.isEmpty(allTasks)) {
+            return Collections.emptyList();
+        }
+
+        // 2. 构建父任务到子任务列表的映射关系，用于内存中快速查找
+        Map<String, List<Task>> childrenTaskMap = allTasks.stream()
+                .filter(task -> task.getParentTaskId() != null)
+                .collect(Collectors.groupingBy(Task::getParentTaskId));
+        if (CollUtil.isEmpty(childrenTaskMap)) {
+            return Collections.emptyList();
+        }
+
+        // 3. 使用栈进行遍历，广度或深度优先搜索所有子孙任务
         List<Task> result = new ArrayList<>();
-        // 1. 递归获取子级
         Stack<Task> stack = new Stack<>();
         stack.push(parentTask);
-        // 2. 递归遍历
-        for (int i = 0; i < Short.MAX_VALUE; i++) {
-            if (stack.isEmpty()) {
-                break;
-            }
-            // 2.1 获取子任务们
+
+        while (!stack.isEmpty()) {
             Task task = stack.pop();
-            List<Task> childTaskList = getTaskListByParentTaskId(task.getId());
-            // 2.2 如果非空，则添加到 stack 进一步递归
+            List<Task> childTaskList = childrenTaskMap.get(task.getId());
             if (CollUtil.isNotEmpty(childTaskList)) {
                 stack.addAll(childTaskList);
                 result.addAll(childTaskList);
@@ -659,7 +669,7 @@ public class BpmTaskServiceImpl implements BpmTaskService {
     }
 
     /**
-     * 审批通过存在“后加签”的任务。
+     * 审批通过存在"后加签"的任务。
      * <p>
      * 注意：该任务不能马上完成，需要一个中间状态（APPROVING），并激活剩余所有子任务（PROCESS）为可审批处理
      * 如果马上完成，则会触发下一个任务，甚至如果没有下一个任务则流程实例就直接结束了！
@@ -771,7 +781,7 @@ public class BpmTaskServiceImpl implements BpmTaskService {
                 BpmCommentTypeEnum.REJECT.formatComment(reqVO.getReason()));
         // 2.3 如果当前任务时被加签的，则加它的根任务也标记成未通过
         // 疑问：为什么要标记未通过呢？
-        // 回答：例如说 A 任务被向前加签除 B 任务时，B 任务被审批不通过，此时 A 会被取消。而 yudao-ui-admin-vue3 不展示“已取消”的任务，导致展示不出审批不通过的细节。
+        // 回答：例如说 A 任务被向前加签除 B 任务时，B 任务被审批不通过，此时 A 会被取消。而 yudao-ui-admin-vue3 不展示"已取消"的任务，导致展示不出审批不通过的细节。
         if (task.getParentTaskId() != null) {
             String rootParentId = getTaskRootParentId(task);
             updateTaskStatusAndReason(rootParentId, BpmTaskStatusEnum.REJECT.getStatus(),
@@ -1044,8 +1054,8 @@ public class BpmTaskServiceImpl implements BpmTaskService {
     /**
      * 校验任务是否可以加签，主要校验加签类型是否一致：
      * <p>
-     * 1. 如果存在“向前加签”的任务，则不能“向后加签”
-     * 2. 如果存在“向后加签”的任务，则不能“向前加签”
+     * 1. 如果存在"向前加签"的任务，则不能"向后加签"
+     * 2. 如果存在"向后加签"的任务，则不能"向前加签"
      *
      * @param userId 当前用户 ID
      * @param reqVO  请求参数，包含任务 ID 和加签类型
@@ -1366,8 +1376,8 @@ public class BpmTaskServiceImpl implements BpmTaskService {
                 Boolean skipStartUserNodeFlag = Convert.toBool(runtimeService.getVariable(processInstance.getProcessInstanceId(),
                         PROCESS_INSTANCE_VARIABLE_SKIP_START_USER_NODE, String.class));
                 if (userTaskElement.getId().equals(START_USER_NODE_ID)
-                        && (skipStartUserNodeFlag == null // 目的：一般是“主流程”，发起人节点，自动通过审核
-                        || Boolean.TRUE.equals(skipStartUserNodeFlag)) // 目的：一般是“子流程”，发起人节点，按配置自动通过审核
+                        && (skipStartUserNodeFlag == null // 目的：一般是"主流程"，发起人节点，自动通过审核
+                        || Boolean.TRUE.equals(skipStartUserNodeFlag)) // 目的：一般是"子流程"，发起人节点，按配置自动通过审核
                         && ObjUtil.notEqual(returnTaskFlag, Boolean.TRUE)) {
                     getSelf().approveTask(Long.valueOf(task.getAssignee()), new BpmTaskApproveReqVO().setId(task.getId())
                             .setReason(BpmReasonEnum.ASSIGN_START_USER_APPROVE_WHEN_SKIP_START_USER_NODE.getReason()));
