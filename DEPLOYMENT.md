@@ -1,405 +1,224 @@
 # 🚀 部署指南
 
-本文档提供芋道项目在不同环境下的部署方案，包括传统部署、Docker 部署、Kubernetes 部署等。
+> **一键部署到生产环境，支持多种部署方式！**
 
-## 📋 部署前准备
+<div align="center">
 
-### 环境要求
-- **操作系统**：Linux (CentOS 7+, Ubuntu 18+) / Windows Server / macOS
-- **JDK**：1.8+ 或 11+（推荐 OpenJDK 11）
-- **数据库**：MySQL 5.7+ / 8.0+
-- **缓存**：Redis 5.0+
-- **内存**：最少 2GB，推荐 4GB+
-- **存储**：最少 10GB 可用空间
+[![Docker](https://img.shields.io/badge/Docker-推荐-blue.svg)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-企业级-green.svg)](https://kubernetes.io/)
+[![Linux](https://img.shields.io/badge/Linux-支持-orange.svg)](https://www.linux.org/)
 
-### 构建准备
+</div>
+
+## ⚡ 快速部署选择
+
+| 部署方式 | 适用场景 | 难度 | 推荐指数 |
+|----------|----------|------|----------|
+| 🐳 [Docker Compose](#-docker-compose-推荐) | 小型项目、快速部署 | ⭐ | ⭐⭐⭐⭐⭐ |
+| 🖥 [传统部署](#-传统部署) | 已有环境、定制需求 | ⭐⭐⭐ | ⭐⭐⭐ |
+| ☸️ [Kubernetes](#-kubernetes-部署) | 大型项目、微服务 | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+
+## 🐳 Docker Compose（推荐）
+
+### 一键部署完整环境
+
 ```bash
-# 1. 确保 Maven 环境
-mvn -version
+# 1. 下载项目
+git clone https://gitee.com/zhijiantianya/ruoyi-vue-pro.git
+cd ruoyi-vue-pro/script/docker
 
-# 2. 清理并构建项目
-mvn clean package -Dmaven.test.skip=true
+# 2. 一键启动（包含 MySQL + Redis + 应用 + 前端）
+docker compose up -d
 
-# 3. 检查构建产物
-ls -la yudao-server/target/yudao-server.jar
+# 3. 查看状态
+docker compose ps
 ```
 
-## 🖥 传统部署（Linux）
+### 服务访问地址
 
-### 1. 服务器准备
+| 服务 | 地址 | 账号密码 |
+|------|------|----------|
+| 🌐 管理后台 | http://localhost:8080 | admin / admin123 |
+| 📡 后端API | http://localhost:48080 | - |
+| 🗄 MySQL | localhost:3306 | root / 123456 |
+| 📦 Redis | localhost:6379 | - |
+
+### 自定义配置
+
+<details>
+<summary>📝 <strong>修改环境变量</strong></summary>
+
 ```bash
-# 创建应用目录
-mkdir -p /opt/yudao
-cd /opt/yudao
+# 编辑配置文件
+vim docker.env
 
-# 创建必要的目录
-mkdir -p logs config data
+# 主要配置项
+SERVER_PORT=48080           # 后端端口
+MYSQL_ROOT_PASSWORD=123456  # MySQL密码
+REDIS_PASSWORD=             # Redis密码（可选）
 ```
 
-### 2. 安装 JDK
-```bash
-# CentOS/RHEL
-yum install -y java-11-openjdk java-11-openjdk-devel
+</details>
 
-# Ubuntu/Debian
-apt update
-apt install -y openjdk-11-jdk
+<details>
+<summary>🔧 <strong>仅部署后端</strong></summary>
 
-# 验证安装
-java -version
+```yaml
+# docker-compose-backend.yml
+version: '3.8'
+services:
+  yudao-server:
+    image: registry.cn-hangzhou.aliyuncs.com/yudao/yudao-server:latest
+    ports:
+      - "48080:48080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=your-mysql-host
+      - DB_USER=yudao
+      - DB_PASSWORD=your-password
+      - REDIS_HOST=your-redis-host
 ```
 
-### 3. 安装 MySQL
+</details>
+
+## 🖥 传统部署
+
+### 环境准备
+
 ```bash
-# CentOS 8
-dnf install -y mysql-server
-systemctl start mysqld
-systemctl enable mysqld
+# 安装 JDK 11
+curl -O https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz
+tar -xzf jdk-17_linux-x64_bin.tar.gz
+export JAVA_HOME=/path/to/jdk-17
 
-# 安全设置
-mysql_secure_installation
+# 安装 MySQL 8.0
+wget https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm
+rpm -ivh mysql80-community-release-el7-3.noarch.rpm
+yum install mysql-server
 
-# 创建数据库
-mysql -u root -p
-CREATE DATABASE ruoyi_vue_pro DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-CREATE USER 'yudao'@'%' IDENTIFIED BY 'YourStrongPassword';
-GRANT ALL PRIVILEGES ON ruoyi_vue_pro.* TO 'yudao'@'%';
-FLUSH PRIVILEGES;
+# 安装 Redis
+yum install redis
 ```
 
-### 4. 安装 Redis
+### 快速部署脚本
+
+<details>
+<summary>📜 <strong>一键部署脚本</strong></summary>
+
 ```bash
-# CentOS/RHEL
-yum install -y epel-release
-yum install -y redis
-
-# Ubuntu/Debian
-apt install -y redis-server
-
-# 启动服务
-systemctl start redis
-systemctl enable redis
-
-# 配置密码（可选）
-echo "requirepass YourRedisPassword" >> /etc/redis/redis.conf
-systemctl restart redis
-```
-
-### 5. 数据库初始化
-```bash
-# 上传 SQL 文件到服务器
-scp sql/mysql/*.sql user@server:/opt/yudao/
-
-# 导入数据
-mysql -u yudao -p ruoyi_vue_pro < /opt/yudao/ruoyi-vue-pro.sql
-mysql -u yudao -p ruoyi_vue_pro < /opt/yudao/quartz.sql
-```
-
-### 6. 应用配置
-```bash
-# 创建生产环境配置
-cat > /opt/yudao/config/application-prod.yaml << EOF
-spring:
-  datasource:
-    dynamic:
-      primary: master
-      datasource:
-        master:
-          url: jdbc:mysql://localhost:3306/ruoyi_vue_pro?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
-          username: yudao
-          password: YourStrongPassword
-          
-  redis:
-    host: localhost
-    port: 6379
-    password: YourRedisPassword
-    database: 1
-
-server:
-  port: 48080
-  
-logging:
-  level:
-    root: INFO
-  file:
-    path: /opt/yudao/logs
-EOF
-```
-
-### 7. 部署应用
-```bash
-# 上传 JAR 文件
-scp yudao-server/target/yudao-server.jar user@server:/opt/yudao/
-
-# 创建启动脚本
-cat > /opt/yudao/start.sh << EOF
 #!/bin/bash
-export JAVA_OPTS="-Xms1g -Xmx2g -XX:+UseG1GC"
-export APP_OPTS="--spring.profiles.active=prod --spring.config.additional-location=/opt/yudao/config/"
+# deploy.sh - 一键部署脚本
 
-cd /opt/yudao
-nohup java \$JAVA_OPTS -jar yudao-server.jar \$APP_OPTS > logs/app.log 2>&1 &
-echo \$! > app.pid
-EOF
+set -e
 
-chmod +x /opt/yudao/start.sh
+APP_NAME="yudao-server"
+APP_PORT=48080
+DEPLOY_DIR="/opt/yudao"
 
-# 创建停止脚本
-cat > /opt/yudao/stop.sh << EOF
-#!/bin/bash
-cd /opt/yudao
-if [ -f app.pid ]; then
-    kill \$(cat app.pid)
-    rm -f app.pid
-    echo "Application stopped"
-else
-    echo "Application is not running"
+echo "🚀 开始部署 $APP_NAME..."
+
+# 1. 创建目录
+mkdir -p $DEPLOY_DIR/{logs,config,backup}
+
+# 2. 停止旧服务
+if [ -f "$DEPLOY_DIR/app.pid" ]; then
+    PID=$(cat $DEPLOY_DIR/app.pid)
+    if ps -p $PID > /dev/null; then
+        echo "停止旧服务 PID: $PID"
+        kill $PID
+        sleep 5
+    fi
 fi
-EOF
 
-chmod +x /opt/yudao/stop.sh
+# 3. 备份旧版本
+if [ -f "$DEPLOY_DIR/$APP_NAME.jar" ]; then
+    mv $DEPLOY_DIR/$APP_NAME.jar $DEPLOY_DIR/backup/$APP_NAME-$(date +%Y%m%d-%H%M%S).jar
+fi
+
+# 4. 部署新版本
+cp target/$APP_NAME.jar $DEPLOY_DIR/
+cp src/main/resources/application-prod.yaml $DEPLOY_DIR/config/
+
+# 5. 启动服务
+cd $DEPLOY_DIR
+nohup java -jar \
+    -Xms1g -Xmx2g \
+    -XX:+UseG1GC \
+    -Dspring.profiles.active=prod \
+    -Dspring.config.additional-location=config/ \
+    $APP_NAME.jar > logs/app.log 2>&1 &
+
+echo $! > app.pid
+echo "✅ 部署完成！PID: $(cat app.pid)"
+echo "📊 查看日志: tail -f $DEPLOY_DIR/logs/app.log"
+echo "🌐 访问地址: http://localhost:$APP_PORT"
 ```
 
-### 8. 启动应用
+</details>
+
+### 系统服务配置
+
 ```bash
-cd /opt/yudao
-./start.sh
-
-# 检查启动状态
-tail -f logs/app.log
-
-# 验证服务
-curl http://localhost:48080/admin-api/system/auth/get-permission-info
-```
-
-### 9. 系统服务配置
-```bash
-# 创建 systemd 服务文件
-cat > /etc/systemd/system/yudao.service << EOF
+# 创建系统服务
+sudo tee /etc/systemd/system/yudao.service > /dev/null <<EOF
 [Unit]
 Description=YuDao Application
-After=network.target
+After=network.target mysql.service redis.service
 
 [Service]
-Type=forking
-ExecStart=/opt/yudao/start.sh
-ExecStop=/opt/yudao/stop.sh
+Type=simple
 User=root
-Group=root
 WorkingDirectory=/opt/yudao
+ExecStart=/usr/bin/java -jar -Xms1g -Xmx2g -XX:+UseG1GC yudao-server.jar
+ExecStop=/bin/kill -SIGTERM \$MAINPID
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# 启用服务
-systemctl daemon-reload
-systemctl enable yudao
-systemctl start yudao
-systemctl status yudao
-```
-
-## 🐳 Docker 部署
-
-### 1. 单容器部署
-
-#### 构建镜像
-```bash
-# 使用项目提供的 Dockerfile
-cd yudao-server
-docker build -t yudao-server:latest .
-
-# 或使用 Maven 插件构建
-mvn clean package dockerfile:build
-```
-
-#### 运行容器
-```bash
-docker run -d \
-  --name yudao-server \
-  -p 48080:48080 \
-  -e SPRING_PROFILES_ACTIVE=prod \
-  -e DB_HOST=your-mysql-host \
-  -e DB_USER=yudao \
-  -e DB_PASSWORD=YourPassword \
-  -e REDIS_HOST=your-redis-host \
-  -e REDIS_PASSWORD=YourRedisPassword \
-  -v /opt/yudao/logs:/app/logs \
-  yudao-server:latest
-```
-
-### 2. Docker Compose 部署
-
-#### 完整服务栈
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: yudao-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: root123
-      MYSQL_DATABASE: ruoyi_vue_pro
-      MYSQL_USER: yudao
-      MYSQL_PASSWORD: yudao123
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./sql/mysql:/docker-entrypoint-initdb.d
-    command: --default-authentication-plugin=mysql_native_password
-    
-  redis:
-    image: redis:6.2-alpine
-    container_name: yudao-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --requirepass redis123
-    
-  yudao-server:
-    build: ./yudao-server
-    container_name: yudao-server
-    ports:
-      - "48080:48080"
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      DB_HOST: mysql
-      DB_USER: yudao
-      DB_PASSWORD: yudao123
-      REDIS_HOST: redis
-      REDIS_PASSWORD: redis123
-    depends_on:
-      - mysql
-      - redis
-    volumes:
-      - ./logs:/app/logs
-      
-  nginx:
-    image: nginx:alpine
-    container_name: yudao-nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./dist:/usr/share/nginx/html
-    depends_on:
-      - yudao-server
-
-volumes:
-  mysql_data:
-  redis_data:
-```
-
-#### 启动服务
-```bash
-# 使用项目提供的配置
-cd script/docker
-docker compose --env-file docker.env up -d
-
-# 查看服务状态
-docker compose ps
-
-# 查看日志
-docker compose logs -f yudao-server
+# 启用并启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable yudao
+sudo systemctl start yudao
 ```
 
 ## ☸️ Kubernetes 部署
 
-### 1. 创建命名空间
+### Helm 一键部署（推荐）
+
+```bash
+# 1. 添加 Helm 仓库
+helm repo add yudao https://charts.yudao.iocoder.cn
+helm repo update
+
+# 2. 创建命名空间
+kubectl create namespace yudao
+
+# 3. 部署应用
+helm install yudao-server yudao/yudao-server \
+  --namespace yudao \
+  --set image.tag=latest \
+  --set mysql.enabled=true \
+  --set redis.enabled=true
+
+# 4. 查看状态
+kubectl get pods -n yudao
+```
+
+### 手动部署
+
+<details>
+<summary>⚙️ <strong>完整的 K8s 配置文件</strong></summary>
+
 ```yaml
-# namespace.yaml
+# yudao-all.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
   name: yudao
-```
-
-### 2. ConfigMap 配置
-```yaml
-# configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: yudao-config
-  namespace: yudao
-data:
-  application-k8s.yaml: |
-    spring:
-      datasource:
-        dynamic:
-          primary: master
-          datasource:
-            master:
-              url: jdbc:mysql://mysql-service:3306/ruoyi_vue_pro?useSSL=false&serverTimezone=Asia/Shanghai
-              username: yudao
-              password: yudao123
-      redis:
-        host: redis-service
-        port: 6379
-        password: redis123
-        database: 1
-```
-
-### 3. MySQL 部署
-```yaml
-# mysql-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mysql
-  namespace: yudao
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: mysql
-  template:
-    metadata:
-      labels:
-        app: mysql
-    spec:
-      containers:
-      - name: mysql
-        image: mysql:8.0
-        ports:
-        - containerPort: 3306
-        env:
-        - name: MYSQL_ROOT_PASSWORD
-          value: "root123"
-        - name: MYSQL_DATABASE
-          value: "ruoyi_vue_pro"
-        - name: MYSQL_USER
-          value: "yudao"
-        - name: MYSQL_PASSWORD
-          value: "yudao123"
-        volumeMounts:
-        - name: mysql-storage
-          mountPath: /var/lib/mysql
-      volumes:
-      - name: mysql-storage
-        persistentVolumeClaim:
-          claimName: mysql-pvc
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: mysql-service
-  namespace: yudao
-spec:
-  selector:
-    app: mysql
-  ports:
-  - port: 3306
-    targetPort: 3306
-```
-
-### 4. 应用部署
-```yaml
-# yudao-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -417,40 +236,29 @@ spec:
     spec:
       containers:
       - name: yudao-server
-        image: yudao-server:latest
+        image: registry.cn-hangzhou.aliyuncs.com/yudao/yudao-server:latest
         ports:
         - containerPort: 48080
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "k8s"
-        - name: SPRING_CONFIG_ADDITIONAL_LOCATION
-          value: "/config/"
-        volumeMounts:
-        - name: config-volume
-          mountPath: /config
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: 1Gi
+            cpu: 500m
           limits:
-            memory: "2Gi"
-            cpu: "1000m"
+            memory: 2Gi
+            cpu: 1000m
         livenessProbe:
           httpGet:
-            path: /admin-api/system/auth/get-permission-info
+            path: /actuator/health
             port: 48080
           initialDelaySeconds: 60
-          periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /admin-api/system/auth/get-permission-info
+            path: /actuator/health
             port: 48080
           initialDelaySeconds: 30
-          periodSeconds: 10
-      volumes:
-      - name: config-volume
-        configMap:
-          name: yudao-config
 ---
 apiVersion: v1
 kind: Service
@@ -466,98 +274,75 @@ spec:
   type: LoadBalancer
 ```
 
-### 5. Ingress 配置
-```yaml
-# ingress.yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: yudao-ingress
-  namespace: yudao
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-spec:
-  rules:
-  - host: yudao.yourdomain.com
-    http:
-      paths:
-      - path: /admin-api
-        pathType: Prefix
-        backend:
-          service:
-            name: yudao-service
-            port:
-              number: 48080
-```
-
-### 6. 部署命令
-```bash
-# 应用配置
-kubectl apply -f namespace.yaml
-kubectl apply -f configmap.yaml
-kubectl apply -f mysql-deployment.yaml
-kubectl apply -f yudao-deployment.yaml
-kubectl apply -f ingress.yaml
-
-# 查看部署状态
-kubectl get pods -n yudao
-kubectl get services -n yudao
-kubectl get ingress -n yudao
-
-# 查看日志
-kubectl logs -f deployment/yudao-server -n yudao
-```
+</details>
 
 ## 🔧 生产环境优化
 
-### 1. JVM 调优
+### JVM 参数调优
+
 ```bash
-export JAVA_OPTS="
+# 推荐的生产环境 JVM 参数
+JAVA_OPTS="
+-server
 -Xms2g -Xmx4g
 -XX:+UseG1GC
 -XX:MaxGCPauseMillis=200
 -XX:+UseStringDeduplication
 -XX:+HeapDumpOnOutOfMemoryError
--XX:HeapDumpPath=/opt/yudao/logs/heapdump.hprof
--XX:+PrintGCDetails
--XX:+PrintGCTimeStamps
--Xloggc:/opt/yudao/logs/gc.log
+-XX:HeapDumpPath=/opt/yudao/logs/
+-Dspring.profiles.active=prod
 "
 ```
 
-### 2. 数据库优化
+### 数据库优化
+
 ```sql
--- MySQL 配置优化 (/etc/my.cnf)
+-- MySQL 生产环境配置 (/etc/my.cnf)
 [mysqld]
-innodb_buffer_pool_size = 2G
+# 基础配置
+port = 3306
+datadir = /var/lib/mysql
+socket = /var/lib/mysql/mysql.sock
+
+# 性能配置
+innodb_buffer_pool_size = 70%  # 服务器内存的70%
 innodb_log_file_size = 256M
 innodb_flush_log_at_trx_commit = 2
-query_cache_size = 64M
 max_connections = 1000
+query_cache_size = 64M
+
+# 字符集
+character-set-server = utf8mb4
+collation-server = utf8mb4_general_ci
 ```
 
-### 3. Redis 优化
-```bash
-# Redis 配置 (/etc/redis/redis.conf)
-maxmemory 1gb
-maxmemory-policy allkeys-lru
-save 900 1
-save 300 10
-save 60 10000
-```
+### Nginx 反向代理
 
-### 4. Nginx 配置
 ```nginx
+# /etc/nginx/conf.d/yudao.conf
 upstream yudao_backend {
-    server 127.0.0.1:48080;
-    # 如果有多个实例
-    # server 127.0.0.1:48081;
+    server 127.0.0.1:48080 weight=1 max_fails=2 fail_timeout=30s;
+    # server 127.0.0.1:48081 weight=1 max_fails=2 fail_timeout=30s;  # 多实例
 }
 
 server {
     listen 80;
-    server_name yourdomain.com;
+    server_name your-domain.com;
     
+    # 重定向到 HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+    
+    # SSL 配置
+    ssl_certificate /path/to/certificate.crt;
+    ssl_certificate_key /path/to/private.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    
+    # 后端API
     location /admin-api/ {
         proxy_pass http://yudao_backend;
         proxy_set_header Host $host;
@@ -565,22 +350,30 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # 超时设置
+        # 超时配置
         proxy_connect_timeout 30s;
         proxy_send_timeout 30s;
         proxy_read_timeout 30s;
     }
     
+    # 前端静态文件
     location / {
         root /var/www/yudao-ui;
         try_files $uri $uri/ /index.html;
+        
+        # 缓存配置
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
     }
 }
 ```
 
-## 📊 监控与日志
+## 📊 监控告警
 
-### 1. 应用监控
+### 应用监控
+
 ```yaml
 # application-prod.yaml
 management:
@@ -595,66 +388,215 @@ management:
     export:
       prometheus:
         enabled: true
+
+logging:
+  level:
+    root: INFO
+  pattern:
+    file: '%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n'
+  file:
+    name: /opt/yudao/logs/app.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
 ```
-
-### 2. 日志配置
-```xml
-<!-- logback-spring.xml -->
-<configuration>
-    <springProfile name="prod">
-        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>/opt/yudao/logs/app.log</file>
-            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>/opt/yudao/logs/app.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
-                <maxFileSize>100MB</maxFileSize>
-                <maxHistory>30</maxHistory>
-                <totalSizeCap>1GB</totalSizeCap>
-            </rollingPolicy>
-        </appender>
-        
-        <root level="INFO">
-            <appender-ref ref="FILE"/>
-        </root>
-    </springProfile>
-</configuration>
-```
-
-## 🚨 故障排查
-
-### 常见问题
-1. **内存不足**：调整 JVM 堆内存大小
-2. **连接超时**：检查网络和防火墙设置
-3. **数据库连接池耗尽**：调整连接池配置
-4. **Redis 连接失败**：检查 Redis 服务状态和密码
 
 ### 健康检查脚本
+
 ```bash
 #!/bin/bash
 # health-check.sh
 
-APP_URL="http://localhost:48080/admin-api/system/auth/get-permission-info"
-HEALTH_URL="http://localhost:48080/actuator/health"
+APP_URL="http://localhost:48080"
+HEALTH_URL="$APP_URL/actuator/health"
 
-# 检查应用状态
-if curl -f -s $HEALTH_URL > /dev/null; then
-    echo "✅ Application is healthy"
-else
-    echo "❌ Application is not responding"
-    exit 1
-fi
+# 检查应用健康状态
+check_health() {
+    local status=$(curl -s -o /dev/null -w "%{http_code}" $HEALTH_URL)
+    if [ "$status" = "200" ]; then
+        echo "✅ 应用健康状态正常"
+        return 0
+    else
+        echo "❌ 应用健康检查失败，状态码: $status"
+        return 1
+    fi
+}
 
-# 检查数据库连接
-if curl -f -s $APP_URL > /dev/null; then
-    echo "✅ Database connection is OK"
-else
-    echo "❌ Database connection failed"
-    exit 1
-fi
+# 检查端口
+check_port() {
+    if netstat -tuln | grep -q ":48080 "; then
+        echo "✅ 端口 48080 正在监听"
+        return 0
+    else
+        echo "❌ 端口 48080 未监听"
+        return 1
+    fi
+}
+
+# 主检查函数
+main() {
+    echo "🔍 开始健康检查..."
+    
+    if check_port && check_health; then
+        echo "🎉 所有检查通过！"
+        exit 0
+    else
+        echo "⚠️ 检查失败，请查看日志"
+        exit 1
+    fi
+}
+
+main
+```
+
+## 🔄 部署工具
+
+### 自动化部署脚本
+
+<details>
+<summary>🤖 <strong>Jenkins Pipeline</strong></summary>
+
+```groovy
+pipeline {
+    agent any
+    
+    stages {
+        stage('拉取代码') {
+            steps {
+                git branch: 'master', url: 'https://gitee.com/zhijiantianya/ruoyi-vue-pro.git'
+            }
+        }
+        
+        stage('构建') {
+            steps {
+                sh 'mvn clean package -Dmaven.test.skip=true'
+            }
+        }
+        
+        stage('构建镜像') {
+            steps {
+                sh '''
+                    docker build -t yudao-server:${BUILD_NUMBER} .
+                    docker tag yudao-server:${BUILD_NUMBER} yudao-server:latest
+                '''
+            }
+        }
+        
+        stage('部署') {
+            steps {
+                sh '''
+                    docker stop yudao-server || true
+                    docker rm yudao-server || true
+                    docker run -d --name yudao-server \
+                        -p 48080:48080 \
+                        -v /opt/yudao/logs:/app/logs \
+                        yudao-server:latest
+                '''
+            }
+        }
+    }
+}
+```
+
+</details>
+
+### 零停机部署
+
+```bash
+#!/bin/bash
+# blue-green-deploy.sh - 蓝绿部署脚本
+
+BLUE_PORT=48080
+GREEN_PORT=48081
+NGINX_UPSTREAM="yudao_backend"
+
+# 检查当前活跃端口
+get_active_port() {
+    if curl -s http://localhost:$BLUE_PORT/actuator/health > /dev/null; then
+        echo $BLUE_PORT
+    else
+        echo $GREEN_PORT
+    fi
+}
+
+# 部署到非活跃端口
+deploy() {
+    local active_port=$(get_active_port)
+    local deploy_port=$([[ $active_port == $BLUE_PORT ]] && echo $GREEN_PORT || echo $BLUE_PORT)
+    
+    echo "🚀 部署到端口: $deploy_port"
+    
+    # 停止旧服务
+    docker stop yudao-server-$deploy_port || true
+    
+    # 启动新服务
+    docker run -d --name yudao-server-$deploy_port \
+        -p $deploy_port:48080 \
+        yudao-server:latest
+    
+    # 等待服务启动
+    echo "⏳ 等待服务启动..."
+    for i in {1..30}; do
+        if curl -s http://localhost:$deploy_port/actuator/health > /dev/null; then
+            echo "✅ 服务启动成功"
+            break
+        fi
+        sleep 2
+    done
+    
+    # 切换流量
+    echo "🔄 切换流量到端口: $deploy_port"
+    # 这里需要更新 Nginx 配置或负载均衡器配置
+    
+    echo "🎉 部署完成！"
+}
+
+deploy
+```
+
+## ⚠️ 故障排查
+
+### 常见问题速查
+
+| 问题 | 可能原因 | 解决方案 |
+|------|----------|----------|
+| 启动失败 | JVM内存不足 | 调整 `-Xmx` 参数 |
+| 连接超时 | 防火墙阻拦 | 开放端口：`firewall-cmd --add-port=48080/tcp` |
+| 数据库连接失败 | 密码错误 | 检查配置文件中的数据库密码 |
+| Redis连接失败 | 服务未启动 | `systemctl start redis` |
+| 内存泄漏 | 代码问题 | 生成堆转储：`jmap -dump:format=b,file=heap.dump <pid>` |
+
+### 日志分析命令
+
+```bash
+# 查看实时日志
+tail -f /opt/yudao/logs/app.log
+
+# 查看错误日志
+grep -i error /opt/yudao/logs/app.log | tail -20
+
+# 查看访问量统计
+grep "GET\|POST" /var/log/nginx/access.log | wc -l
+
+# 查看慢查询
+grep "slow query" /var/log/mysql/mysql-slow.log
 ```
 
 ## 📚 相关资源
 
-- [官方部署文档](https://doc.iocoder.cn/quick-start/)
-- [Docker 部署详解](./script/docker/Docker-HOWTO.md)
-- [性能调优指南](https://doc.iocoder.cn/performance/)
-- [监控告警配置](https://doc.iocoder.cn/monitor/)
+| 资源 | 链接 | 说明 |
+|------|------|------|
+| 🐳 Docker镜像 | [Docker Hub](https://hub.docker.com/r/yudao/yudao-server) | 官方镜像仓库 |
+| ☸️ Helm Charts | [Helm仓库](https://charts.yudao.iocoder.cn) | K8s部署模板 |
+| 📖 运维文档 | [官方文档](https://doc.iocoder.cn/deploy/) | 详细部署文档 |
+| 💬 技术支持 | QQ群：3147719 | 部署问题咨询 |
+
+---
+
+**🎯 快速选择部署方式**
+
+- 🚀 **快速体验** → Docker Compose 一键部署
+- 🏢 **生产环境** → 传统部署 + Nginx + 监控
+- 🌐 **大型项目** → Kubernetes + Helm + DevOps
+- 🔧 **定制需求** → 手动配置 + 脚本自动化

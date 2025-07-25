@@ -25,11 +25,26 @@
 
 | 文档 | 说明 | 适用人群 |
 |------|------|----------|
-| [🚀 快速开始](./QUICK_START.md) | 5分钟快速搭建和体验系统 | 新手开发者 |
-| [💻 开发指南](./DEVELOPMENT.md) | 详细的开发环境配置和代码规范 | 开发人员 |
+| [🌟 项目总览](./PROJECT_OVERVIEW.md) | 项目介绍、技术架构、功能特性 | 所有用户 |
+| [🚀 快速开始](./QUICK_START.md) | 3分钟快速搭建和体验系统 | 新手开发者 |
+| [💻 开发指南](./DEVELOPMENT.md) | 开发环境配置、代码规范、最佳实践 | 开发人员 |
 | [🚀 部署指南](./DEPLOYMENT.md) | 生产环境部署的完整方案 | 运维人员 |
+| [🔧 实用工具](./tools/) | 开发和部署工具脚本 | 开发人员 |
 | [🐳 Docker部署](./script/docker/Docker-HOWTO.md) | 使用Docker快速部署体验 | 所有用户 |
 | [📖 官方文档](https://doc.iocoder.cn/) | 完整的在线文档和教程 | 所有用户 |
+
+## 🎯 快速导航
+
+### 🚀 立即开始
+- **想快速体验？** → [Docker一键启动](./QUICK_START.md#-docker-方式最简单)
+- **想了解项目？** → [项目总览](./PROJECT_OVERVIEW.md)
+- **想深入开发？** → [开发指南](./DEVELOPMENT.md)
+
+### 📋 常见需求
+- **如何部署生产环境？** → [部署指南](./DEPLOYMENT.md)
+- **有哪些实用工具？** → [工具目录](./tools/)
+- **遇到问题怎么办？** → [常见问题](./QUICK_START.md#️-常见问题)
+- **想参与贡献？** → [贡献指南](https://gitee.com/zhijiantianya/ruoyi-vue-pro/blob/master/CONTRIBUTING.md)
 
 ## 🐰 版本说明
 
