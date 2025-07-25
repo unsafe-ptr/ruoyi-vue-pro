@@ -4432,6 +4432,8 @@ GO
 SET IDENTITY_INSERT system_menu ON
 GO
 INSERT INTO system_menu (id, name, permission, type, sort, parent_id, path, icon, component, component_name, status, visible, keep_alive, always_show, creator, create_time, updater, update_time, deleted) VALUES (1, N'系统管理', N'', 1, 10, 0, N'/system', N'ep:tools', NULL, NULL, 0, N'1', N'1', N'1', N'admin', N'2021-01-05 17:03:48', N'1', N'2025-03-15 21:30:27', N'0')
+INSERT INTO system_menu (id, name, permission, type, sort, parent_id, path, icon, component, component_name, status, visible, keep_alive, always_show, creator, create_time, updater, update_time, deleted) VALUES (5000, N'工作台', N'', 1, 1, 0, N'/dashboard', N'ep:odometer', NULL, NULL, 0, N'1', N'1', N'1', N'1', N'2025-01-05 10:00:00', N'1', N'2025-01-05 10:00:00', N'0')
+INSERT INTO system_menu (id, name, permission, type, sort, parent_id, path, icon, component, component_name, status, visible, keep_alive, always_show, creator, create_time, updater, update_time, deleted) VALUES (5001, N'首页概览', N'system:dashboard:query', 2, 1, 5000, N'home', N'ep:home-filled', N'dashboard/index', N'Dashboard', 0, N'1', N'1', N'1', N'1', N'2025-01-05 10:00:00', N'1', N'2025-01-05 10:00:00', N'0')
 GO
 INSERT INTO system_menu (id, name, permission, type, sort, parent_id, path, icon, component, component_name, status, visible, keep_alive, always_show, creator, create_time, updater, update_time, deleted) VALUES (2, N'基础设施', N'', 1, 20, 0, N'/infra', N'ep:monitor', NULL, NULL, 0, N'1', N'1', N'1', N'admin', N'2021-01-05 17:03:48', N'1', N'2024-03-01 08:28:40', N'0')
 GO

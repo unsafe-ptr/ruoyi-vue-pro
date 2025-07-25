@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.module.promotion.controller.admin.banner.vo.BannerCreateReqVO;
 import cn.iocoder.yudao.module.promotion.controller.admin.banner.vo.BannerPageReqVO;
 import cn.iocoder.yudao.module.promotion.controller.admin.banner.vo.BannerUpdateReqVO;
+import cn.iocoder.yudao.module.promotion.controller.admin.banner.vo.BannerStatisticsRespVO;
 import cn.iocoder.yudao.module.promotion.dal.dataobject.banner.BannerDO;
 
 import javax.validation.Valid;
@@ -68,5 +69,43 @@ public interface BannerService {
      * @return Banner 列表
      */
     List<BannerDO> getBannerListByPosition(Integer position);
+
+    /**
+     * 批量删除 Banner
+     *
+     * @param ids Banner编号列表
+     */
+    void batchDeleteBanner(List<Long> ids);
+
+    /**
+     * 批量更新 Banner 状态
+     *
+     * @param ids Banner编号列表
+     * @param status 状态
+     */
+    void batchUpdateBannerStatus(List<Long> ids, Integer status);
+
+    /**
+     * 更新 Banner 排序
+     *
+     * @param id Banner编号
+     * @param sort 排序
+     */
+    void updateBannerSort(Long id, Integer sort);
+
+    /**
+     * 获取 Banner 统计数据
+     *
+     * @return 统计数据
+     */
+    BannerStatisticsRespVO getBannerStatistics();
+
+    /**
+     * 获取热门 Banner 列表
+     *
+     * @param limit 限制数量
+     * @return Banner 列表
+     */
+    List<BannerDO> getHotBanners(Integer limit);
 
 }
