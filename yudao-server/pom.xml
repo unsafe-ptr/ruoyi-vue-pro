@@ -133,16 +133,58 @@
     <build>
         <!-- 设置构建的 jar 包名 -->
         <finalName>${project.artifactId}</finalName>
+        
+        <!-- 资源文件配置 -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>**/*.properties</include>
+                    <include>**/*.yml</include>
+                    <include>**/*.yaml</include>
+                    <include>**/*.xml</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>**/*.properties</exclude>
+                    <exclude>**/*.yml</exclude>
+                    <exclude>**/*.yaml</exclude>
+                    <exclude>**/*.xml</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        
         <plugins>
-            <!-- 打包 -->
+            <!-- Spring Boot 打包插件 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring.boot.version}</version>
+                <configuration>
+                    <!-- 排除 Lombok，避免打包 -->
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                    <!-- 生成构建信息 -->
+                    <additionalProperties>
+                        <encoding.source>${project.build.sourceEncoding}</encoding.source>
+                        <encoding.reporting>${project.reporting.outputEncoding}</encoding.reporting>
+                        <java.source>${java.version}</java.source>
+                        <java.target>${java.version}</java.target>
+                    </additionalProperties>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
                             <goal>repackage</goal> <!-- 将引入的 jar 打入其中 -->
+                            <goal>build-info</goal> <!-- 生成构建信息 -->
                         </goals>
                     </execution>
                 </executions>

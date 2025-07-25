@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions>
+    <!-- Maven Wrapper Extension -->
+    <extension>
+        <groupId>org.apache.maven.wrapper</groupId>
+        <artifactId>maven-wrapper</artifactId>
+        <version>3.3.2</version>
+    </extension>
+    
+    <!-- 构建时间统计扩展 -->
+    <extension>
+        <groupId>co.leantechniques</groupId>
+        <artifactId>maven-buildtime-extension</artifactId>
+        <version>3.2.0</version>
+    </extension>
+</extensions>
