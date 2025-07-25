@@ -38,14 +38,18 @@
         <java.version>1.8</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        
+        <!-- 插件版本 -->
         <maven-surefire-plugin.version>3.2.2</maven-surefire-plugin.version>
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
         <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
-        <!-- maven-surefire-plugin 暂时无法通过 bom 的依赖读取（兼容老版本 IDEA 2024 及以前版本） -->
+        
+        <!-- 主要依赖版本 -->
         <lombok.version>1.18.38</lombok.version>
         <spring.boot.version>2.7.18</spring.boot.version>
         <mapstruct.version>1.6.3</mapstruct.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencyManagement>
@@ -69,6 +73,10 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
+                    <configuration>
+                        <skipTests>false</skipTests>
+                        <argLine>-Dfile.encoding=UTF-8</argLine>
+                    </configuration>
                 </plugin>
                 <!-- maven-compiler-plugin 插件，解决 spring-boot-configuration-processor + Lombok + MapStruct 组合 -->
                 <!-- https://stackoverflow.com/questions/33483697/re-run-spring-boot-configuration-annotation-processor-to-update-generated-metada -->
@@ -77,6 +85,9 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven-compiler-plugin.version}</version>
                     <configuration>
+                        <source>${maven.compiler.source}</source>
+                        <target>${maven.compiler.target}</target>
+                        <encoding>${project.build.sourceEncoding}</encoding>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.springframework.boot</groupId>
@@ -90,7 +101,7 @@
                             </path>
                             <path>
                                 <!-- 确保 Lombok 生成的 getter/setter 方法能被 MapStruct 正确识别，
-                                     避免出现 No property named “xxx" exists 的编译错误 -->
+                                     避免出现 No property named "xxx" exists 的编译错误 -->
                                 <groupId>org.projectlombok</groupId>
                                 <artifactId>lombok-mapstruct-binding</artifactId>
                                 <version>0.2.0</version>
@@ -106,6 +117,7 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>flatten-maven-plugin</artifactId>
+                    <version>${flatten-maven-plugin.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -146,13 +158,24 @@
             <id>huaweicloud</id>
             <name>huawei</name>
             <url>https://mirrors.huaweicloud.com/repository/maven/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
         <repository>
             <id>aliyunmaven</id>
             <name>aliyun</name>
             <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
         </repository>
-
         <repository>
             <id>spring-milestones</id>
             <name>Spring Milestones</name>
@@ -170,5 +193,30 @@
             </releases>
         </repository>
     </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>huaweicloud-plugin</id>
+            <name>huawei plugin</name>
+            <url>https://mirrors.huaweicloud.com/repository/maven/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>aliyunmaven-plugin</id>
+            <name>aliyun plugin</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 
 </project>
